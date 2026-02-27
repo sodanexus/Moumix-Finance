@@ -590,43 +590,46 @@ function confirmLivretSolde(id) {
 async function refreshAllPrices() {
   if (positions.length === 0) return;
   const btn = document.getElementById('refreshBtn');
-  btn.disabled = true; btn.textContent = '↻ Actualisation…';
+  const badge = document.getElementById('updateBadge');
+  if (btn) { btn.disabled = true; if (badge) badge.textContent = 'Actualisation…'; }
 
-  const uniqueSymbols = [...new Set(positions.map(p => p.symbol))];
-  const priceMap = {};
+  try {
+    const uniqueSymbols = [...new Set(positions.map(p => p.symbol))];
+    const priceMap = {};
 
-  for (const sym of uniqueSymbols) {
-    try {
-      const data = await fetchPrice(sym);
-      if (data && data.priceEur != null) priceMap[sym] = data;
-    } catch(e) {}
-  }
-
-  positions = positions.map(p => {
-    if (priceMap[p.symbol]) {
-      const newPrice = priceMap[p.symbol].priceEur ?? p.current;
-      if (!positionHistory[p.id]) positionHistory[p.id] = generateHistory(p.current, 12);
-      positionHistory[p.id].push(newPrice);
-      if (positionHistory[p.id].length > 20) positionHistory[p.id].shift();
-      return { ...p, current: newPrice, lastUpdated: Date.now() };
+    for (const sym of uniqueSymbols) {
+      try {
+        const data = await fetchPrice(sym);
+        if (data && data.priceEur != null) priceMap[sym] = data;
+      } catch(e) {}
     }
-    return p;
-  });
 
-  save();
-  const now = new Date();
-  document.getElementById('updateBadge').textContent = `Actualisé à ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
-  renderAll();
-  btn.disabled = false; btn.textContent = '↻ Actualiser';
-  // Mettre à jour les historiques réels en arrière-plan
-  for (const sym of uniqueSymbols) {
-    fetchHistory(sym).then(hist => {
-      if (!hist || hist.length < 2) return;
-      positions.filter(p => p.symbol === sym).forEach(p => {
-        positionHistory[p.id] = hist;
-      });
-      renderPositions();
+    positions = positions.map(p => {
+      if (priceMap[p.symbol]) {
+        const newPrice = priceMap[p.symbol].priceEur ?? p.current;
+        if (!positionHistory[p.id]) positionHistory[p.id] = generateHistory(p.current, 12);
+        positionHistory[p.id].push(newPrice);
+        if (positionHistory[p.id].length > 20) positionHistory[p.id].shift();
+        return { ...p, current: newPrice, lastUpdated: Date.now() };
+      }
+      return p;
     });
+
+    save();
+    const now = new Date();
+    if (badge) badge.textContent = `Actualisé à ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+    renderAll();
+
+    // Historiques réels en arrière-plan
+    for (const sym of uniqueSymbols) {
+      fetchHistory(sym).then(hist => {
+        if (!hist || hist.length < 2) return;
+        positions.filter(p => p.symbol === sym).forEach(p => { positionHistory[p.id] = hist; });
+        renderPositions();
+      });
+    }
+  } finally {
+    if (btn) { btn.disabled = false; }
   }
 }
 
