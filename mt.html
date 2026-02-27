@@ -724,9 +724,6 @@ function updateUserUI(user) {
 async function loadAllData() {
   const uid = currentUser.id;
 
-  // Petit délai pour laisser le SDK finir son _recoverAndRefresh avant d'envoyer des requêtes
-  await new Promise(r => setTimeout(r, 300));
-
   // Timeout de sécurité — si Supabase ne répond pas en 8s on abandonne
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
 
@@ -2001,31 +1998,37 @@ if (!localStorage.getItem('pt_migration_done')) {
 
 document.getElementById('loadingOverlay').style.display = 'flex';
 
-sb.auth.onAuthStateChange(async (event, session) => {
-  console.log('auth event:', event, session?.user?.email);
-  if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-    if (session?.user) {
-      if (!currentUser) await initApp(session.user);
-    } else {
-      showLogin();
-    }
+// onAuthStateChange sert UNIQUEMENT pour login/logout post-init
+// PAS pour le chargement initial — le SDK n'est pas encore prêt à ce moment
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_IN' && currentUser === null) {
+    // Vient d'un vrai login (pas un refresh)
+    initApp(session.user);
   } else if (event === 'SIGNED_OUT') {
     currentUser = null;
     accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = [];
     const dog = document.getElementById('dogWidget');
     if (dog) dog.style.display = 'none';
     showLogin();
-  } else if (event === 'TOKEN_REFRESHED') {
-    // Session rafraîchie, rien à faire
   }
 });
 
-// Fallback : si rien ne se passe en 6s → login
-setTimeout(() => {
-  if (!currentUser && document.getElementById('loadingOverlay').style.display !== 'none') {
+// Pour le chargement initial et les refreshs :
+// On attend que le SDK ait fini son init complète avant d'appeler getSession
+window.addEventListener('load', async () => {
+  // Laisse le SDK terminer _initialize / _recoverAndRefresh
+  await new Promise(r => setTimeout(r, 800));
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session?.user && !currentUser) {
+      await initApp(session.user);
+    } else if (!session) {
+      showLogin();
+    }
+  } catch(e) {
     showLogin();
   }
-}, 6000);
+});
 
 window.addEventListener('resize', () => renderChart());
 </script>
