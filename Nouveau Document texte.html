@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suivi de Patrimoine</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f; --surface: #111418; --surface2: #181c22;
+    --border: #1e2530; --accent: #00e5a0; --accent2: #0070f3;
+    --text: #e8edf5; --muted: #5a6478; --gain: #00e5a0; --loss: #ff4466;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,229,160,0.04) 0%, transparent 60%),
+                radial-gradient(ellipse 50% 50% at 80% 80%, rgba(0,112,243,0.05) 0%, transparent 60%);
+    pointer-events: none; z-index: 0;
+  }
+  .app { position: relative; z-index: 1; max-width: 1300px; margin: 0 auto; padding: 24px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 36px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.4rem; letter-spacing: -0.03em; }
+  .logo span { color: var(--accent); }
+  .live-badge { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }
+  .total-banner {
+    background: linear-gradient(135deg, var(--surface) 0%, #0f1520 100%);
+    border: 1px solid var(--border); border-radius: 16px; padding: 28px 32px; margin-bottom: 24px;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+    position: relative; overflow: hidden;
+  }
+  .total-banner::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 40%; background: linear-gradient(90deg, transparent, rgba(0,229,160,0.03)); pointer-events: none; }
+  .total-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
+  .total-value { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 2.8rem; letter-spacing: -0.04em; line-height: 1; background: linear-gradient(135deg, #fff 0%, var(--accent) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; transition: all 0.4s; }
+  .total-stats { display: flex; gap: 32px; flex-wrap: wrap; }
+  .stat { text-align: right; }
+  .stat-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+  .stat-val { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.1rem; }
+  .gain-col { color: var(--gain); } .loss-col { color: var(--loss); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  @media(max-width:700px){ .grid{ grid-template-columns:1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: border-color 0.2s; }
+  .card:hover { border-color: rgba(0,229,160,0.3); }
+  .card-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .card-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.9rem; }
+  .card-badge { font-size: 0.65rem; padding: 3px 8px; border-radius: 20px; background: rgba(0,229,160,0.1); color: var(--accent); border: 1px solid rgba(0,229,160,0.2); text-transform: uppercase; letter-spacing: 0.08em; }
+  .card-body { padding: 16px 20px; }
+  .positions-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  th { color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.65rem; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); font-weight: 400; }
+  td { padding: 10px 10px; border-bottom: 1px solid rgba(30,37,48,0.6); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .ticker-sym { font-family:'Syne',sans-serif; font-weight:700; font-size:0.85rem; }
+  .ticker-name { font-size: 0.65rem; color: var(--muted); margin-top: 1px; }
+  .price-cell { font-weight: 500; }
+  .alloc-row { margin-bottom: 10px; }
+  .alloc-label { display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.75rem; }
+  .alloc-name { color: var(--text); } .alloc-pct { color: var(--muted); }
+  .alloc-bar-wrap { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .alloc-bar { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .accounts-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:12px; margin-bottom:24px; }
+  .account-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; transition: all 0.2s; cursor: pointer; position: relative; }
+  .account-card:hover { border-color: rgba(0,229,160,0.4); transform: translateY(-1px); }
+  .account-type { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 8px; }
+  .account-name { font-family:'Syne',sans-serif; font-weight:700; font-size:1rem; margin-bottom:10px; }
+  .account-total { font-size: 0.95rem; font-weight: 500; }
+  .account-perf { font-size: 0.72rem; margin-top: 2px; }
+  .btn { font-family: 'DM Mono', monospace; font-size: 0.78rem; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; transition: all 0.2s; letter-spacing: 0.02em; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 500; }
+  .btn-primary:hover { background: #00ffb3; border-color: #00ffb3; color: #000; }
+  .btn-sm { padding: 6px 12px; font-size: 0.72rem; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; width: 100%; max-width: 460px; transform: translateY(10px); transition: transform 0.2s; }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal h2 { font-family:'Syne',sans-serif; font-weight:700; font-size:1.2rem; margin-bottom:20px; }
+  .form-row { margin-bottom: 14px; position: relative; }
+  label { display: block; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 5px; }
+  input, select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.85rem; outline: none; transition: border-color 0.2s; }
+  input:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--surface); }
+  .form-hint { font-size: 0.68rem; color: var(--muted); margin-top: 5px; }
+  .form-actions { display:flex; gap:10px; margin-top:20px; justify-content:flex-end; }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
+  .del-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; padding:2px 6px; border-radius:4px; transition:color 0.2s; }
+  .del-btn:hover { color: var(--loss); }
+  .mini-chart { width: 60px; height: 24px; }
+  .section-title { font-family:'Syne',sans-serif; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--muted); margin-bottom:14px; margin-top:8px; }
+  @keyframes flicker { 0%{opacity:1} 30%{opacity:0.4} 60%{opacity:1} }
+  .flicker { animation: flicker 0.4s; }
+  .empty-state { color:var(--muted); font-size:0.8rem; text-align:center; padding:24px; }
+  .tag { display:inline-block; font-size:0.62rem; padding:2px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:0.06em; }
+  .tag-cto { background:rgba(0,112,243,0.15); color:#5ba4ff; }
+  .tag-pea { background:rgba(0,229,160,0.12); color:var(--accent); }
+  .tag-av  { background:rgba(255,180,0,0.12); color:#ffb400; }
+  .tag-crypto { background:rgba(255,100,100,0.12); color:#ff7070; }
+  .tag-immo { background:rgba(160,100,255,0.12); color:#c27aff; }
+  .tag-autre { background:rgba(100,100,100,0.12); color:#aaa; }
+
+  /* Ticker search */
+  .ticker-search-wrap { position: relative; }
+  .ticker-suggestions {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 200;
+    background: #1a1f28; border: 1px solid var(--accent); border-top: none;
+    border-radius: 0 0 8px 8px; max-height: 220px; overflow-y: auto;
+  }
+  .ticker-suggestion {
+    padding: 10px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+    transition: background 0.15s; border-bottom: 1px solid var(--border); font-size: 0.8rem;
+  }
+  .ticker-suggestion:last-child { border-bottom: none; }
+  .ticker-suggestion:hover, .ticker-suggestion.active { background: rgba(0,229,160,0.08); }
+  .sug-left { display: flex; flex-direction: column; gap: 2px; }
+  .sug-sym { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.85rem; color: var(--accent); }
+  .sug-name { font-size: 0.7rem; color: var(--muted); }
+  .sug-right { text-align: right; }
+  .sug-price { font-weight: 500; font-size: 0.82rem; }
+  .sug-exch { font-size: 0.65rem; color: var(--muted); }
+  .search-status {
+    padding: 10px 14px; font-size: 0.75rem; color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .selected-ticker-box {
+    background: rgba(0,229,160,0.07); border: 1px solid rgba(0,229,160,0.3);
+    border-radius: 8px; padding: 10px 14px; margin-top: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .stb-left { display: flex; flex-direction: column; gap: 3px; }
+  .stb-sym { font-family: 'Syne', sans-serif; font-weight: 700; color: var(--accent); }
+  .stb-name { font-size: 0.72rem; color: var(--muted); }
+  .stb-price { font-size: 0.85rem; font-weight: 500; }
+  .price-source-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.62rem; color: var(--accent); background: rgba(0,229,160,0.08);
+    border: 1px solid rgba(0,229,160,0.2); border-radius: 4px; padding: 2px 7px; margin-left: 6px;
+  }
+  .real-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: pulse 1.5s infinite; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">patri<span>.</span>track</div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div class="live-badge"><div class="live-dot"></div><span id="liveBadgeText">Chargement…</span></div>
+      <button class="btn btn-sm" onclick="openModal('account')">+ Compte</button>
+      <button class="btn btn-sm btn-primary" onclick="openModal('position')">+ Position</button>
+    </div>
+  </header>
+
+  <div class="total-banner">
+    <div>
+      <div class="total-label">Patrimoine total</div>
+      <div class="total-value" id="totalValue">—</div>
+    </div>
+    <div class="total-stats">
+      <div class="stat"><div class="stat-label">P&L jour</div><div class="stat-val" id="dailyPnl">—</div></div>
+      <div class="stat"><div class="stat-label">P&L total</div><div class="stat-val" id="totalPnl">—</div></div>
+      <div class="stat"><div class="stat-label">Positions</div><div class="stat-val" id="posCount">0</div></div>
+    </div>
+  </div>
+
+  <div class="section-title">Comptes</div>
+  <div class="accounts-grid" id="accountsGrid">
+    <div class="empty-state" style="grid-column:1/-1">Aucun compte — cliquez sur "+ Compte"</div>
+  </div>
+
+  <div class="grid">
+    <div class="card" style="grid-column:1/-1">
+      <div class="card-header">
+        <div class="card-title">Positions</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="card-badge" id="updateBadge">—</span>
+          <button class="btn btn-sm" id="refreshBtn" onclick="refreshAllPrices()" title="Actualiser les prix">↻ Actualiser</button>
+        </div>
+      </div>
+      <div class="card-body positions-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Titre</th><th>Compte</th><th>Type</th><th>Qté</th>
+              <th>Prix achat</th><th>Prix actuel</th><th>Valeur</th>
+              <th>P&L €</th><th>P&L %</th><th>Trend</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="posTable"><tr><td colspan="11" class="empty-state">Aucune position</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-header"><div class="card-title">Allocation</div></div>
+      <div class="card-body" id="allocContent"><div class="empty-state">Ajoutez des positions</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Par compte</div></div>
+      <div class="card-body" id="byAccountContent"><div class="empty-state">Ajoutez des comptes</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL COMPTE -->
+<div class="modal-overlay" id="accountModal">
+  <div class="modal">
+    <h2>Nouveau compte</h2>
+    <div class="form-row">
+      <label>Courtier / Établissement</label>
+      <input type="text" id="acc-name" placeholder="ex: Boursorama, Binance…">
+    </div>
+    <div class="form-row">
+      <label>Type</label>
+      <select id="acc-type">
+        <option value="PEA">PEA</option><option value="CTO">CTO</option>
+        <option value="AV">Assurance-Vie</option><option value="Crypto">Crypto</option>
+        <option value="Immo">Immobilier</option><option value="Autre">Autre</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeModal('account')">Annuler</button>
+      <button class="btn btn-primary" onclick="addAccount()">Créer le compte</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL POSITION -->
+<div class="modal-overlay" id="positionModal">
+  <div class="modal">
+    <h2>Nouvelle position</h2>
+
+    <!-- Ticker search -->
+    <div class="form-row">
+      <label>Rechercher un titre</label>
+      <div class="ticker-search-wrap">
+        <input type="text" id="pos-ticker-input" placeholder="ex: Apple, AAPL, BTC, Total…" autocomplete="off" oninput="onTickerInput(this.value)" onkeydown="onTickerKeydown(event)">
+        <div class="ticker-suggestions" id="tickerSuggestions" style="display:none"></div>
+      </div>
+      <div id="selectedTickerBox" style="display:none" class="selected-ticker-box">
+        <div class="stb-left">
+          <div class="stb-sym" id="stbSym">—</div>
+          <div class="stb-name" id="stbName">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="stb-price" id="stbPrice">—</div>
+          <div style="font-size:0.65rem;color:var(--muted)" id="stbExch">—</div>
+          <div><span class="price-source-badge"><span class="real-dot"></span>Cours réel</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label>Compte</label>
+      <select id="pos-account"><option value="">— choisir —</option></select>
+    </div>
+    <div class="form-row">
+      <label>Quantité</label>
+      <input type="number" id="pos-qty" placeholder="ex: 10" step="any" min="0">
+    </div>
+    <div class="form-row">
+      <label>Prix d'achat (€) <span style="color:var(--muted);font-size:0.65rem;text-transform:none;letter-spacing:0">— optionnel</span></label>
+      <input type="number" id="pos-price" placeholder="Laissez vide si inconnu" step="any" min="0">
+      <div class="form-hint">Si vide, le prix actuel sera utilisé comme référence (P&L à 0)</div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" onclick="closeModal('position')">Annuler</button>
+      <button class="btn btn-primary" id="addPosBtn" onclick="addPosition()" disabled>Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let accounts = JSON.parse(localStorage.getItem('pt_accounts') || '[]');
+let positions = JSON.parse(localStorage.getItem('pt_positions') || '[]');
+let positionHistory = {};
+let selectedTicker = null; // { symbol, name, price, exchange, currency }
+let searchTimeout = null;
+let suggestionsIndex = -1;
+const ALLOC_COLORS = ['#00e5a0','#0070f3','#ffb400','#ff4466','#c27aff','#00cfff','#ff9a3c'];
+
+function save() {
+  localStorage.setItem('pt_accounts', JSON.stringify(accounts));
+  localStorage.setItem('pt_positions', JSON.stringify(positions));
+}
+
+// ─── YAHOO FINANCE API (via proxy CORS) ──────────────────────────────────────
+const YF_BASE = 'https://query1.finance.yahoo.com';
+
+// Proxy CORS public gratuit
+async function yfFetch(path) {
+  const url = YF_BASE + path;
+  const proxied = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+  const res = await fetch(proxied);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+let eurRates = { USD: 1.08, GBP: 0.86, CHF: 0.98, JPY: 160, CAD: 1.48, AUD: 1.65 };
+
+async function fetchEurRate(currency) {
+  if (currency === 'EUR') return 1;
+  if (eurRates[currency]) return eurRates[currency];
+  try {
+    const d = await yfFetch(`/v8/finance/chart/${currency}EUR=X?interval=1d&range=1d`);
+    const rate = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+    if (rate) { eurRates[currency] = rate; return rate; }
+  } catch(e) {}
+  return 1;
+}
+
+async function toEur(price, currency) {
+  if (!currency || currency === 'EUR') return price;
+  const rate = await fetchEurRate(currency);
+  return price / rate;
+}
+
+async function fetchQuote(symbol) {
+  try {
+    const data = await yfFetch(`/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`);
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta) return null;
+    const price = meta.regularMarketPrice ?? meta.previousClose;
+    const currency = meta.currency || 'USD';
+    const prevClose = meta.chartPreviousClose || meta.previousClose || price;
+    const change = price - prevClose;
+    const changePercent = prevClose ? (change / prevClose) * 100 : 0;
+    const priceEur = await toEur(price, currency);
+    return { symbol, price, currency, priceEur, change, changePercent };
+  } catch(e) { return null; }
+}
+
+async function fetchPrice(symbol) { return await fetchQuote(symbol); }
+
+async function searchTickers(query) {
+  try {
+    const data = await yfFetch(`/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=7&newsCount=0&listsCount=0`);
+    const quotes = data?.finance?.result?.[0]?.quotes || [];
+    const results = [];
+    for (const q of quotes.slice(0, 5)) {
+      if (!q.symbol) continue;
+      if (['OPTION','FUTURE','INDEX'].includes(q.quoteType || '')) continue;
+      let price = null, currency = q.currency || 'USD', priceEur = null;
+      try {
+        const pr = await fetchQuote(q.symbol);
+        if (pr) { price = pr.price; currency = pr.currency || currency; priceEur = pr.priceEur; }
+      } catch(e) {}
+      results.push({
+        symbol: q.symbol,
+        name: q.longname || q.shortname || q.symbol,
+        price, currency,
+        exchange: q.exchDisp || q.exchange || '',
+        priceEur
+      });
+    }
+    return results.length > 0 ? results : null;
+  } catch(e) { console.error('searchTickers:', e); return null; }
+}
+
+// ─── TICKER INPUT ─────────────────────────────────────────────────────────────
+function onTickerInput(val) {
+  clearTimeout(searchTimeout);
+  selectedTicker = null;
+  document.getElementById('selectedTickerBox').style.display = 'none';
+  document.getElementById('addPosBtn').disabled = true;
+  suggestionsIndex = -1;
+
+  if (val.length < 2) {
+    hideSuggestions();
+    return;
+  }
+  showSearchStatus('Recherche en cours…');
+  searchTimeout = setTimeout(async () => {
+    try {
+      const results = await searchTickers(val);
+      if (!results || results.length === 0) {
+        showSearchStatus('Aucun résultat trouvé');
+        return;
+      }
+      renderSuggestions(results);
+    } catch(e) {
+      showSearchStatus('Erreur de recherche');
+    }
+  }, 600);
+}
+
+function showSearchStatus(msg) {
+  const el = document.getElementById('tickerSuggestions');
+  el.style.display = 'block';
+  el.innerHTML = `<div class="search-status"><span class="spin"></span>${msg}</div>`;
+}
+
+function hideSuggestions() {
+  document.getElementById('tickerSuggestions').style.display = 'none';
+}
+
+function renderSuggestions(results) {
+  const el = document.getElementById('tickerSuggestions');
+  el.style.display = 'block';
+  el.innerHTML = results.map((r, i) => {
+    const priceStr = r.priceEur != null ? fmtEur(r.priceEur) : (r.price != null ? `${fmt(r.price)} ${r.currency}` : '—');
+    const encoded = encodeURIComponent(JSON.stringify(r));
+    return `<div class="ticker-suggestion" data-index="${i}" data-ticker="${encoded}" onclick="selectTicker(decodeURIComponent(this.dataset.ticker))">
+      <div class="sug-left">
+        <div class="sug-sym">${r.symbol}</div>
+        <div class="sug-name">${r.name}</div>
+      </div>
+      <div class="sug-right">
+        <div class="sug-price">${priceStr}</div>
+        <div class="sug-exch">${r.exchange || ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function onTickerKeydown(e) {
+  const el = document.getElementById('tickerSuggestions');
+  const items = el.querySelectorAll('.ticker-suggestion');
+  if (e.key === 'ArrowDown') { suggestionsIndex = Math.min(suggestionsIndex+1, items.length-1); highlightSuggestion(items); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { suggestionsIndex = Math.max(suggestionsIndex-1, 0); highlightSuggestion(items); e.preventDefault(); }
+  else if (e.key === 'Enter' && suggestionsIndex >= 0) { items[suggestionsIndex].click(); e.preventDefault(); }
+  else if (e.key === 'Escape') { hideSuggestions(); }
+}
+
+function highlightSuggestion(items) {
+  items.forEach((it,i) => it.classList.toggle('active', i === suggestionsIndex));
+  if (items[suggestionsIndex]) items[suggestionsIndex].scrollIntoView({block:'nearest'});
+}
+
+function selectTicker(jsonStr) {
+  const r = JSON.parse(jsonStr);
+  selectedTicker = r;
+  hideSuggestions();
+  document.getElementById('pos-ticker-input').value = `${r.symbol} — ${r.name}`;
+  document.getElementById('stbSym').textContent = r.symbol;
+  document.getElementById('stbName').textContent = r.name;
+  const priceStr = r.priceEur != null ? fmtEur(r.priceEur) : (r.price != null ? `${fmt(r.price)} ${r.currency}` : '—');
+  document.getElementById('stbPrice').textContent = priceStr;
+  document.getElementById('stbExch').textContent = r.exchange || '';
+  document.getElementById('selectedTickerBox').style.display = 'flex';
+  document.getElementById('addPosBtn').disabled = false;
+}
+
+// ─── MODALS ───────────────────────────────────────────────────────────────────
+function openModal(type) {
+  if (type === 'position') {
+    const sel = document.getElementById('pos-account');
+    sel.innerHTML = '<option value="">— choisir —</option>';
+    accounts.forEach(a => {
+      const o = document.createElement('option');
+      o.value = a.id; o.textContent = a.name; sel.appendChild(o);
+    });
+    // Reset
+    selectedTicker = null;
+    document.getElementById('pos-ticker-input').value = '';
+    document.getElementById('selectedTickerBox').style.display = 'none';
+    document.getElementById('addPosBtn').disabled = true;
+    document.getElementById('pos-qty').value = '';
+    document.getElementById('pos-price').value = '';
+    hideSuggestions();
+  }
+  document.getElementById(type + 'Modal').classList.add('open');
+}
+function closeModal(type) { document.getElementById(type + 'Modal').classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if(e.target === o) o.classList.remove('open'); });
+});
+
+// ─── ADD ACCOUNT ──────────────────────────────────────────────────────────────
+function addAccount() {
+  const name = document.getElementById('acc-name').value.trim();
+  const type = document.getElementById('acc-type').value;
+  if (!name) return alert('Veuillez saisir un nom');
+  accounts.push({ id: Date.now().toString(), name, type });
+  save(); closeModal('account');
+  document.getElementById('acc-name').value = '';
+  renderAll();
+}
+
+// ─── ADD POSITION ─────────────────────────────────────────────────────────────
+function addPosition() {
+  if (!selectedTicker) return;
+  const accountId = document.getElementById('pos-account').value;
+  const qty = parseFloat(document.getElementById('pos-qty').value);
+  const priceRaw = document.getElementById('pos-price').value;
+  if (!qty) return alert('Veuillez saisir une quantité');
+
+  const currentEur = selectedTicker.priceEur ?? selectedTicker.price ?? 0;
+  const price = priceRaw ? parseFloat(priceRaw) : currentEur;
+  const pos = {
+    id: Date.now().toString(),
+    symbol: selectedTicker.symbol,
+    name: selectedTicker.name,
+    exchange: selectedTicker.exchange || '',
+    currency: selectedTicker.currency || 'EUR',
+    accountId, qty,
+    price,
+    current: currentEur,
+    priceUnknown: !priceRaw,
+    lastUpdated: Date.now()
+  };
+  positions.push(pos);
+  positionHistory[pos.id] = generateHistory(currentEur, 12);
+  save(); closeModal('position'); renderAll();
+}
+
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+function deletePosition(id) { positions = positions.filter(p => p.id !== id); delete positionHistory[id]; save(); renderAll(); }
+function deleteAccount(id) { accounts = accounts.filter(a => a.id !== id); save(); renderAll(); }
+
+// ─── REFRESH PRICES ───────────────────────────────────────────────────────────
+async function refreshAllPrices() {
+  if (positions.length === 0) return;
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true; btn.textContent = '↻ Actualisation…';
+
+  const uniqueSymbols = [...new Set(positions.map(p => p.symbol))];
+  const priceMap = {};
+
+  for (const sym of uniqueSymbols) {
+    try {
+      const data = await fetchPrice(sym);
+      if (data && data.priceEur != null) priceMap[sym] = data;
+    } catch(e) {}
+  }
+
+  positions = positions.map(p => {
+    if (priceMap[p.symbol]) {
+      const newPrice = priceMap[p.symbol].priceEur ?? p.current;
+      if (!positionHistory[p.id]) positionHistory[p.id] = generateHistory(p.current, 12);
+      positionHistory[p.id].push(newPrice);
+      if (positionHistory[p.id].length > 20) positionHistory[p.id].shift();
+      return { ...p, current: newPrice, lastUpdated: Date.now() };
+    }
+    return p;
+  });
+
+  save();
+  const now = new Date();
+  document.getElementById('updateBadge').textContent = `Réel — ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+  document.getElementById('liveBadgeText').textContent = 'Prix réels';
+  renderAll();
+  btn.disabled = false; btn.textContent = '↻ Actualiser';
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function generateHistory(current, n) {
+  const pts = [];
+  let v = current * (1 + (Math.random()-0.5)*0.15);
+  for (let i=0; i<n; i++) { v = v*(1+(Math.random()-0.5)*0.03); pts.push(v); }
+  pts.push(current); return pts;
+}
+function sparklineSVG(data, color) {
+  if (!data||data.length<2) return '';
+  const w=60,h=24; const min=Math.min(...data),max=Math.max(...data); const range=max-min||1;
+  const pts=data.map((v,i)=>{ const x=(i/(data.length-1))*w; const y=h-((v-min)/range)*(h-2)-1; return `${x},${y}`; });
+  return `<svg class="mini-chart" viewBox="0 0 ${w} ${h}"><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+}
+function fmt(n,dec=2) { return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}).format(n); }
+function fmtEur(n) { return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(n); }
+function tagClass(type) { const m={PEA:'tag-pea',CTO:'tag-cto',AV:'tag-av',Crypto:'tag-crypto',Immo:'tag-immo',Autre:'tag-autre'}; return m[type]||'tag-autre'; }
+function getAccountName(id) { const a=accounts.find(a=>a.id===id); return a?a.name:'—'; }
+function getAccountType(id) { const a=accounts.find(a=>a.id===id); return a?a.type:''; }
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function renderAccounts() {
+  const grid = document.getElementById('accountsGrid');
+  if (accounts.length===0) { grid.innerHTML='<div class="empty-state" style="grid-column:1/-1">Aucun compte — cliquez sur "+ Compte"</div>'; return; }
+  grid.innerHTML = accounts.map(a => {
+    const myPos=positions.filter(p=>p.accountId===a.id);
+    const total=myPos.reduce((s,p)=>s+p.current*p.qty,0);
+    const cost=myPos.reduce((s,p)=>s+p.price*p.qty,0);
+    const pnl=total-cost; const pct=cost>0?(pnl/cost*100):0;
+    const pnlColor=pnl>=0?'var(--gain)':'var(--loss)';
+    return `<div class="account-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div class="account-type">${a.name}</div>
+        <button class="del-btn" onclick="deleteAccount('${a.id}')">✕</button>
+      </div>
+      <span class="tag ${tagClass(a.type)}">${a.type}</span>
+      <div style="margin-top:10px">
+        <div class="account-total">${fmtEur(total)}</div>
+        <div class="account-perf" style="color:${pnlColor}">${pnl>=0?'+':''}${fmtEur(pnl)} (${pnl>=0?'+':''}${fmt(pct)}%)</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderPositions() {
+  const tbody=document.getElementById('posTable');
+  if (positions.length===0) { tbody.innerHTML='<tr><td colspan="11" class="empty-state">Aucune position — cliquez sur "+ Position"</td></tr>'; return; }
+  tbody.innerHTML = positions.map(p => {
+    const value=p.current*p.qty;
+    const pnl=(p.current-p.price)*p.qty;
+    const pct=((p.current-p.price)/p.price)*100;
+    const color=pnl>=0?'var(--gain)':'var(--loss)';
+    const sparkColor=pnl>=0?'#00e5a0':'#ff4466';
+    const hist=positionHistory[p.id]||generateHistory(p.current,12);
+    const type=getAccountType(p.accountId);
+    const pnlDisplay=p.priceUnknown?'<span style="color:var(--muted)">—</span>':`<span style="color:${color}">${pnl>=0?'+':''}${fmtEur(pnl)}</span>`;
+    const pctDisplay=p.priceUnknown?'<span style="color:var(--muted)">—</span>':`<span style="color:${color}">${pnl>=0?'+':''}${fmt(pct)}%</span>`;
+    const priceDisplay=p.priceUnknown?'<span style="color:var(--muted);font-size:0.72rem">inconnu</span>':fmtEur(p.price);
+    const ago = p.lastUpdated ? timeAgo(p.lastUpdated) : '';
+    return `<tr>
+      <td><div class="ticker-sym">${p.symbol}</div><div class="ticker-name">${p.name||''}</div></td>
+      <td style="font-size:0.75rem">${getAccountName(p.accountId)}</td>
+      <td><span class="tag ${tagClass(type)}">${type||'—'}</span></td>
+      <td>${fmt(p.qty,p.qty%1===0?0:4)}</td>
+      <td>${priceDisplay}</td>
+      <td class="price-cell" id="price-${p.id}">${fmtEur(p.current)}<div style="font-size:0.6rem;color:var(--muted)">${ago}</div></td>
+      <td>${fmtEur(value)}</td>
+      <td class="pnl">${pnlDisplay}</td>
+      <td>${pctDisplay}</td>
+      <td>${sparklineSVG(hist,sparkColor)}</td>
+      <td><button class="del-btn" onclick="deletePosition('${p.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'à l\'instant';
+  if (diff < 3600000) return `il y a ${Math.floor(diff/60000)}min`;
+  if (diff < 86400000) return `il y a ${Math.floor(diff/3600000)}h`;
+  return `il y a ${Math.floor(diff/86400000)}j`;
+}
+
+function renderAllocation() {
+  const el=document.getElementById('allocContent');
+  if (positions.length===0) { el.innerHTML='<div class="empty-state">Ajoutez des positions</div>'; return; }
+  const total=positions.reduce((s,p)=>s+p.current*p.qty,0);
+  const map={};
+  positions.forEach(p=>{ if(!map[p.symbol])map[p.symbol]={val:0,name:p.name}; map[p.symbol].val+=p.current*p.qty; });
+  const sorted=Object.entries(map).sort((a,b)=>b[1].val-a[1].val);
+  el.innerHTML=sorted.map(([sym,d],i)=>{
+    const pct=total>0?(d.val/total*100):0;
+    return `<div class="alloc-row">
+      <div class="alloc-label"><span class="alloc-name">${sym} <span style="color:var(--muted);font-size:0.65rem">${d.name||''}</span></span><span class="alloc-pct">${fmt(pct)}% — ${fmtEur(d.val)}</span></div>
+      <div class="alloc-bar-wrap"><div class="alloc-bar" style="width:${pct}%;background:${ALLOC_COLORS[i%ALLOC_COLORS.length]}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderByAccount() {
+  const el=document.getElementById('byAccountContent');
+  if (accounts.length===0) { el.innerHTML='<div class="empty-state">Ajoutez des comptes</div>'; return; }
+  const total=positions.reduce((s,p)=>s+p.current*p.qty,0);
+  el.innerHTML=accounts.map((a,i)=>{
+    const val=positions.filter(p=>p.accountId===a.id).reduce((s,p)=>s+p.current*p.qty,0);
+    const pct=total>0?(val/total*100):0;
+    return `<div class="alloc-row">
+      <div class="alloc-label"><span class="alloc-name">${a.name}</span><span class="alloc-pct">${fmt(pct)}% — ${fmtEur(val)}</span></div>
+      <div class="alloc-bar-wrap"><div class="alloc-bar" style="width:${pct}%;background:${ALLOC_COLORS[i%ALLOC_COLORS.length]}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderSummary() {
+  const total=positions.reduce((s,p)=>s+p.current*p.qty,0);
+  const cost=positions.reduce((s,p)=>s+p.price*p.qty,0);
+  const totalPnl=total-cost;
+  const totalPnlPct=cost>0?(totalPnl/cost*100):0;
+  document.getElementById('totalValue').textContent=fmtEur(total);
+  document.getElementById('posCount').textContent=positions.length;
+  const tp=document.getElementById('totalPnl');
+  tp.textContent=(totalPnl>=0?'+':'')+fmtEur(totalPnl)+' ('+(totalPnl>=0?'+':'')+fmt(totalPnlPct)+'%)';
+  tp.className='stat-val '+(totalPnl>=0?'gain-col':'loss-col');
+  // Daily P&L not available without real-time feed
+  const dp=document.getElementById('dailyPnl');
+  dp.textContent='Actualiser →'; dp.className='stat-val'; dp.style.color='var(--muted)';
+}
+
+function renderAll() { renderAccounts(); renderPositions(); renderAllocation(); renderByAccount(); renderSummary(); }
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+positions.forEach(p=>{ if(!positionHistory[p.id])positionHistory[p.id]=generateHistory(p.current,12); });
+
+// Set initial badge
+document.getElementById('liveBadgeText').textContent = positions.length > 0 ? 'Prix en cache' : 'En attente';
+document.getElementById('updateBadge').textContent = positions.length > 0 ? 'Cliquez ↻ pour actualiser' : '—';
+
+renderAll();
+
+// Auto-refresh every 5 minutes if positions exist
+setInterval(() => { if (positions.length > 0) refreshAllPrices(); }, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
