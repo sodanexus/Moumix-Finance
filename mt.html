@@ -102,6 +102,7 @@
   .tag-crypto { background:rgba(255,100,100,0.12); color:#ff7070; }
   .tag-immo { background:rgba(160,100,255,0.12); color:#c27aff; }
   .tag-autre { background:rgba(100,100,100,0.12); color:#aaa; }
+  .tag-livret { background:rgba(0,200,255,0.12); color:#00c8ff; }
 
   /* Ticker search */
   .ticker-search-wrap { position: relative; }
@@ -150,7 +151,7 @@
   <header>
     <div class="logo">patri<span>.</span>track</div>
     <div style="display:flex;gap:12px;align-items:center">
-      <div class="live-badge"><div class="live-dot"></div><span id="liveBadgeText">Chargement…</span></div>
+
       <button class="btn btn-sm" onclick="openModal('account')">+ Compte</button>
       <button class="btn btn-sm btn-primary" onclick="openModal('position')">+ Position</button>
     </div>
@@ -178,8 +179,7 @@
       <div class="card-header">
         <div class="card-title">Positions</div>
         <div style="display:flex;gap:8px;align-items:center">
-          <span class="card-badge" id="updateBadge">—</span>
-          <button class="btn btn-sm" id="refreshBtn" onclick="refreshAllPrices()" title="Actualiser les prix">↻ Actualiser</button>
+          <button class="btn btn-sm" id="refreshBtn" onclick="refreshAllPrices()">↻ <span id="updateBadge">Actualiser</span></button>
         </div>
       </div>
       <div class="card-body positions-wrap">
@@ -219,11 +219,16 @@
     </div>
     <div class="form-row">
       <label>Type</label>
-      <select id="acc-type">
+      <select id="acc-type" onchange="onAccTypeChange(this.value)">
         <option value="PEA">PEA</option><option value="CTO">CTO</option>
         <option value="AV">Assurance-Vie</option><option value="Crypto">Crypto</option>
-        <option value="Immo">Immobilier</option><option value="Autre">Autre</option>
+        <option value="Livret">Livret</option><option value="Immo">Immobilier</option><option value="Autre">Autre</option>
       </select>
+    </div>
+    <div class="form-row" id="acc-solde-row" style="display:none">
+      <label>Solde (€)</label>
+      <input type="number" id="acc-solde" placeholder="ex: 5000" step="any" min="0">
+      <div class="form-hint">Le solde du livret est fixe et ne change pas avec les marchés</div>
     </div>
     <div class="form-actions">
       <button class="btn" onclick="closeModal('account')">Annuler</button>
@@ -339,6 +344,19 @@ async function fetchQuote(symbol) {
 }
 
 async function fetchPrice(symbol) { return await fetchQuote(symbol); }
+
+async function fetchHistory(symbol) {
+  try {
+    const data = await yfFetch(`/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`);
+    const result = data?.chart?.result?.[0];
+    if (!result) return null;
+    const closes = result.indicators?.quote?.[0]?.close || [];
+    const currency = result.meta?.currency || 'USD';
+    // Convertir en EUR
+    const rate = await fetchEurRate(currency);
+    return closes.filter(v => v != null).map(v => currency === 'EUR' ? v : v / rate);
+  } catch(e) { return null; }
+}
 
 async function searchTickers(query) {
   try {
@@ -470,7 +488,7 @@ function openModal(type) {
   if (type === 'position') {
     const sel = document.getElementById('pos-account');
     sel.innerHTML = '<option value="">— choisir —</option>';
-    accounts.forEach(a => {
+    accounts.filter(a => a.type !== 'Livret').forEach(a => {
       const o = document.createElement('option');
       o.value = a.id; o.textContent = a.name; sel.appendChild(o);
     });
@@ -491,13 +509,21 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
 });
 
 // ─── ADD ACCOUNT ──────────────────────────────────────────────────────────────
+function onAccTypeChange(val) {
+  document.getElementById('acc-solde-row').style.display = val === 'Livret' ? 'block' : 'none';
+}
+
 function addAccount() {
   const name = document.getElementById('acc-name').value.trim();
   const type = document.getElementById('acc-type').value;
   if (!name) return alert('Veuillez saisir un nom');
-  accounts.push({ id: Date.now().toString(), name, type });
+  const solde = type === 'Livret' ? (parseFloat(document.getElementById('acc-solde').value) || 0) : null;
+  accounts.push({ id: Date.now().toString(), name, type, solde });
   save(); closeModal('account');
   document.getElementById('acc-name').value = '';
+  document.getElementById('acc-solde').value = '';
+  document.getElementById('acc-solde-row').style.display = 'none';
+  document.getElementById('acc-type').value = 'PEA';
   renderAll();
 }
 
@@ -526,11 +552,39 @@ function addPosition() {
   positions.push(pos);
   positionHistory[pos.id] = generateHistory(currentEur, 12);
   save(); closeModal('position'); renderAll();
+  // Charger l'historique réel en arrière-plan
+  fetchHistory(pos.symbol).then(hist => {
+    if (hist && hist.length > 1) {
+      positionHistory[pos.id] = hist;
+      renderPositions();
+    }
+  });
 }
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 function deletePosition(id) { positions = positions.filter(p => p.id !== id); delete positionHistory[id]; save(); renderAll(); }
 function deleteAccount(id) { accounts = accounts.filter(a => a.id !== id); save(); renderAll(); }
+function editLivretSolde(id) {
+  const editDiv = document.getElementById('livret-edit-' + id);
+  const input = document.getElementById('livret-input-' + id);
+  editDiv.style.display = 'block';
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+function cancelLivretEdit(id) {
+  document.getElementById('livret-edit-' + id).style.display = 'none';
+}
+function confirmLivretSolde(id) {
+  const input = document.getElementById('livret-input-' + id);
+  const a = accounts.find(a => a.id === id);
+  if (a) {
+    a.solde = parseFloat(input.value) || 0;
+    save();
+    const el = document.getElementById('livret-total-' + id);
+    if (el) el.textContent = fmtEur(a.solde);
+    renderSummary(); renderByAccount(); renderAllocation();
+  }
+  document.getElementById('livret-edit-' + id).style.display = 'none';
+}
 
 // ─── REFRESH PRICES ───────────────────────────────────────────────────────────
 async function refreshAllPrices() {
@@ -561,10 +615,19 @@ async function refreshAllPrices() {
 
   save();
   const now = new Date();
-  document.getElementById('updateBadge').textContent = `Réel — ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
-  document.getElementById('liveBadgeText').textContent = 'Prix réels';
+  document.getElementById('updateBadge').textContent = `Actualisé à ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
   renderAll();
   btn.disabled = false; btn.textContent = '↻ Actualiser';
+  // Mettre à jour les historiques réels en arrière-plan
+  for (const sym of uniqueSymbols) {
+    fetchHistory(sym).then(hist => {
+      if (!hist || hist.length < 2) return;
+      positions.filter(p => p.symbol === sym).forEach(p => {
+        positionHistory[p.id] = hist;
+      });
+      renderPositions();
+    });
+  }
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -582,7 +645,7 @@ function sparklineSVG(data, color) {
 }
 function fmt(n,dec=2) { return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}).format(n); }
 function fmtEur(n) { return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(n); }
-function tagClass(type) { const m={PEA:'tag-pea',CTO:'tag-cto',AV:'tag-av',Crypto:'tag-crypto',Immo:'tag-immo',Autre:'tag-autre'}; return m[type]||'tag-autre'; }
+function tagClass(type) { const m={PEA:'tag-pea',CTO:'tag-cto',AV:'tag-av',Crypto:'tag-crypto',Immo:'tag-immo',Livret:'tag-livret',Autre:'tag-autre'}; return m[type]||'tag-autre'; }
 function getAccountName(id) { const a=accounts.find(a=>a.id===id); return a?a.name:'—'; }
 function getAccountType(id) { const a=accounts.find(a=>a.id===id); return a?a.type:''; }
 
@@ -591,6 +654,35 @@ function renderAccounts() {
   const grid = document.getElementById('accountsGrid');
   if (accounts.length===0) { grid.innerHTML='<div class="empty-state" style="grid-column:1/-1">Aucun compte — cliquez sur "+ Compte"</div>'; return; }
   grid.innerHTML = accounts.map(a => {
+    if (a.type === 'Livret') {
+      const solde = a.solde || 0;
+      return `<div class="account-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div class="account-type">${a.name}</div>
+          <button class="del-btn" onclick="deleteAccount('${a.id}')">✕</button>
+        </div>
+        <span class="tag ${tagClass(a.type)}">${a.type}</span>
+        <div style="margin-top:10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="account-total" id="livret-total-${a.id}">${fmtEur(solde)}</div>
+            <button onclick="editLivretSolde('${a.id}')" title="Modifier le solde"
+              style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:0.8rem;padding:2px 4px;border-radius:4px;transition:color 0.2s;line-height:1"
+              onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">✏️</button>
+          </div>
+          <div id="livret-edit-${a.id}" style="display:none;margin-top:8px;display:none">
+            <div style="display:flex;align-items:center;gap:6px">
+              <input type="number" id="livret-input-${a.id}" value="${solde}" step="any" min="0"
+                style="width:120px;padding:5px 9px;font-size:0.82rem;background:var(--bg);border:1px solid var(--accent);border-radius:6px;color:var(--text);font-family:'DM Mono',monospace;outline:none"
+                onkeydown="if(event.key==='Enter')confirmLivretSolde('${a.id}');if(event.key==='Escape')cancelLivretEdit('${a.id}')">
+              <button onclick="confirmLivretSolde('${a.id}')"
+                style="background:var(--accent);border:none;cursor:pointer;color:#000;font-size:0.72rem;padding:5px 9px;border-radius:6px;font-family:'DM Mono',monospace;font-weight:500">✓</button>
+              <button onclick="cancelLivretEdit('${a.id}')"
+                style="background:none;border:1px solid var(--border);cursor:pointer;color:var(--muted);font-size:0.72rem;padding:5px 9px;border-radius:6px;font-family:'DM Mono',monospace">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }
     const myPos=positions.filter(p=>p.accountId===a.id);
     const total=myPos.reduce((s,p)=>s+p.current*p.qty,0);
     const cost=myPos.reduce((s,p)=>s+p.price*p.qty,0);
@@ -669,9 +761,11 @@ function renderByAccount() {
   const el=document.getElementById('byAccountContent');
   if (accounts.length===0) { el.innerHTML='<div class="empty-state">Ajoutez des comptes</div>'; return; }
   const total=positions.reduce((s,p)=>s+p.current*p.qty,0);
+  const livretTotalBA=accounts.filter(a=>a.type==='Livret').reduce((s,a)=>s+(a.solde||0),0);
+  const totalBA=positions.reduce((s,p)=>s+p.current*p.qty,0)+livretTotalBA;
   el.innerHTML=accounts.map((a,i)=>{
-    const val=positions.filter(p=>p.accountId===a.id).reduce((s,p)=>s+p.current*p.qty,0);
-    const pct=total>0?(val/total*100):0;
+    const val=a.type==='Livret' ? (a.solde||0) : positions.filter(p=>p.accountId===a.id).reduce((s,p)=>s+p.current*p.qty,0);
+    const pct=totalBA>0?(val/totalBA*100):0;
     return `<div class="alloc-row">
       <div class="alloc-label"><span class="alloc-name">${a.name}</span><span class="alloc-pct">${fmt(pct)}% — ${fmtEur(val)}</span></div>
       <div class="alloc-bar-wrap"><div class="alloc-bar" style="width:${pct}%;background:${ALLOC_COLORS[i%ALLOC_COLORS.length]}"></div></div>
@@ -680,7 +774,8 @@ function renderByAccount() {
 }
 
 function renderSummary() {
-  const total=positions.reduce((s,p)=>s+p.current*p.qty,0);
+  const livretTotal=accounts.filter(a=>a.type==='Livret').reduce((s,a)=>s+(a.solde||0),0);
+  const total=positions.reduce((s,p)=>s+p.current*p.qty,0)+livretTotal;
   const cost=positions.reduce((s,p)=>s+p.price*p.qty,0);
   const totalPnl=total-cost;
   const totalPnlPct=cost>0?(totalPnl/cost*100):0;
@@ -698,6 +793,10 @@ function renderAll() { renderAccounts(); renderPositions(); renderAllocation(); 
 
 // ─── EXPOSE GLOBALS ──────────────────────────────────────────────────────────
 window.yfFetch = yfFetch;
+window.editLivretSolde = editLivretSolde;
+window.cancelLivretEdit = cancelLivretEdit;
+window.confirmLivretSolde = confirmLivretSolde;
+window.onAccTypeChange = onAccTypeChange;
 window.searchTickers = searchTickers;
 window.fetchQuote = fetchQuote;
 window.fetchPrice = fetchPrice;
@@ -716,8 +815,7 @@ window.refreshAllPrices = refreshAllPrices;
 positions.forEach(p=>{ if(!positionHistory[p.id])positionHistory[p.id]=generateHistory(p.current,12); });
 
 // Set initial badge
-document.getElementById('liveBadgeText').textContent = positions.length > 0 ? 'Prix en cache' : 'En attente';
-document.getElementById('updateBadge').textContent = positions.length > 0 ? 'Cliquez ↻ pour actualiser' : '—';
+// badge init — rien à faire, le bouton est toujours visible
 
 renderAll();
 
