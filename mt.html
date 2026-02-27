@@ -822,7 +822,10 @@ positions.forEach(p=>{ if(!positionHistory[p.id])positionHistory[p.id]=generateH
 
 renderAll();
 
-// Auto-refresh every 5 minutes if positions exist
+// Refresh au chargement si des positions existent
+if (positions.length > 0) refreshAllPrices();
+
+// Auto-refresh toutes les 5 minutes
 setInterval(() => { if (positions.length > 0) refreshAllPrices(); }, 5 * 60 * 1000);
 </script>
 
