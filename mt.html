@@ -187,7 +187,7 @@
           <thead>
             <tr>
               <th>Titre</th><th>Compte</th><th>Type</th><th>Qté</th>
-              <th>Prix achat</th><th>Prix actuel</th><th>Valeur</th>
+              <th>PRU</th><th>Prix actuel</th><th>Valeur</th>
               <th>P&L €</th><th>P&L %</th><th>Trend</th><th></th>
             </tr>
           </thead>
@@ -271,9 +271,9 @@
       <input type="number" id="pos-qty" placeholder="ex: 10" step="any" min="0">
     </div>
     <div class="form-row">
-      <label>Prix d'achat (€) <span style="color:var(--muted);font-size:0.65rem;text-transform:none;letter-spacing:0">— optionnel</span></label>
+      <label>PRU — Prix de Revient Unitaire (€)</label>
       <input type="number" id="pos-price" placeholder="Laissez vide si inconnu" step="any" min="0">
-      <div class="form-hint">Si vide, le prix actuel sera utilisé comme référence (P&L à 0)</div>
+      <div class="form-hint">Obligatoire pour calculer le P&L</div>
     </div>
     <div class="form-actions">
       <button class="btn" onclick="closeModal('position')">Annuler</button>
@@ -481,6 +481,14 @@ function selectTicker(jsonStr) {
   document.getElementById('stbExch').textContent = r.exchange || '';
   document.getElementById('selectedTickerBox').style.display = 'flex';
   document.getElementById('addPosBtn').disabled = false;
+  // Valider aussi si qty et PRU sont remplis
+  function checkAddPosReady() {
+    const qty = document.getElementById('pos-qty').value;
+    const pru = document.getElementById('pos-price').value;
+    document.getElementById('addPosBtn').disabled = !(selectedTicker && qty && pru);
+  }
+  document.getElementById('pos-qty').oninput = checkAddPosReady;
+  document.getElementById('pos-price').oninput = checkAddPosReady;
 }
 
 // ─── MODALS ───────────────────────────────────────────────────────────────────
@@ -534,9 +542,10 @@ function addPosition() {
   const qty = parseFloat(document.getElementById('pos-qty').value);
   const priceRaw = document.getElementById('pos-price').value;
   if (!qty) return alert('Veuillez saisir une quantité');
+  if (!priceRaw) return alert('Veuillez saisir le PRU');
 
   const currentEur = selectedTicker.priceEur ?? selectedTicker.price ?? 0;
-  const price = priceRaw ? parseFloat(priceRaw) : currentEur;
+  const price = parseFloat(priceRaw);
   const pos = {
     id: Date.now().toString(),
     symbol: selectedTicker.symbol,
@@ -546,7 +555,6 @@ function addPosition() {
     accountId, qty,
     price,
     current: currentEur,
-    priceUnknown: !priceRaw,
     lastUpdated: Date.now()
   };
   positions.push(pos);
@@ -716,9 +724,9 @@ function renderPositions() {
     const sparkColor=pnl>=0?'#00e5a0':'#ff4466';
     const hist=positionHistory[p.id]||generateHistory(p.current,12);
     const type=getAccountType(p.accountId);
-    const pnlDisplay=p.priceUnknown?'<span style="color:var(--muted)">—</span>':`<span style="color:${color}">${pnl>=0?'+':''}${fmtEur(pnl)}</span>`;
-    const pctDisplay=p.priceUnknown?'<span style="color:var(--muted)">—</span>':`<span style="color:${color}">${pnl>=0?'+':''}${fmt(pct)}%</span>`;
-    const priceDisplay=p.priceUnknown?'<span style="color:var(--muted);font-size:0.72rem">inconnu</span>':fmtEur(p.price);
+    const pnlDisplay=`<span style="color:${color}">${pnl>=0?'+':''}${fmtEur(pnl)}</span>`;
+    const pctDisplay=`<span style="color:${color}">${pnl>=0?'+':''}${fmt(pct)}%</span>`;
+    const priceDisplay=fmtEur(p.price);
     const ago = p.lastUpdated ? timeAgo(p.lastUpdated) : '';
     return `<tr>
       <td><div class="ticker-sym">${p.symbol}</div><div class="ticker-name">${p.name||''}</div></td>
