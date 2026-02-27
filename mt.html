@@ -299,7 +299,7 @@
 </head>
 <body>
 <!-- LOADING -->
-<div class="loading-overlay" id="loadingOverlay">
+<div class="loading-overlay" id="loadingOverlay" style="display:none">
   <span class="spin" style="display:inline-block;width:32px;height:32px;border:3px solid #1e2530;border-top-color:#00e5a0;border-radius:50%;animation:spin 0.7s linear infinite"></span>
   <div style="font-size:0.8rem;color:#5a6478">Chargement…</div>
 </div>
@@ -1937,14 +1937,25 @@ function showLogin() {
 }
 
 // Auth state listener — point d'entrée principal
-sb.auth.onAuthStateChange(async (event, session) => {
+// D'abord on vérifie la session existante (cas refresh page)
+document.getElementById('loadingOverlay').style.display = 'flex';
+sb.auth.getSession().then(({ data: { session } }) => {
   if (session?.user) {
-    document.getElementById('loadingOverlay').style.display = 'flex';
-    document.getElementById('loginScreen').style.display = 'none';
-    await initApp(session.user);
+    initApp(session.user);
   } else {
+    showLogin();
+  }
+});
+
+// Ensuite on écoute les changements (login / logout)
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+    await initApp(session.user);
+  } else if (event === 'SIGNED_OUT') {
     currentUser = null;
     accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = [];
+    const dog = document.getElementById('dogWidget');
+    if (dog) dog.style.display = 'none';
     showLogin();
   }
 });
