@@ -343,25 +343,41 @@ async function fetchPrice(symbol) { return await fetchQuote(symbol); }
 async function searchTickers(query) {
   try {
     const data = await yfFetch(`/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=7&newsCount=0&listsCount=0`);
-    const quotes = data?.finance?.result?.[0]?.quotes || [];
-    const results = [];
-    for (const q of quotes.slice(0, 5)) {
-      if (!q.symbol) continue;
-      if (['OPTION','FUTURE','INDEX'].includes(q.quoteType || '')) continue;
-      let price = null, currency = q.currency || 'USD', priceEur = null;
+    const quotes = data?.quotes || data?.finance?.result?.[0]?.quotes || [];
+
+    // Filtrer d'abord
+    const filtered = quotes.filter(q =>
+      q.symbol && !['OPTION','FUTURE','INDEX'].includes(q.quoteType || '')
+    ).slice(0, 5);
+
+    if (filtered.length === 0) return null;
+
+    // Afficher immédiatement sans attendre les prix
+    const results = filtered.map(q => ({
+      symbol: q.symbol,
+      name: q.longname || q.shortname || q.symbol,
+      price: null, currency: q.currency || 'USD',
+      exchange: q.exchDisp || q.exchange || '',
+      priceEur: null
+    }));
+
+    // Charger les prix en parallèle en arrière-plan
+    Promise.all(filtered.map(async (q, i) => {
       try {
         const pr = await fetchQuote(q.symbol);
-        if (pr) { price = pr.price; currency = pr.currency || currency; priceEur = pr.priceEur; }
+        if (pr) {
+          results[i].price = pr.price;
+          results[i].currency = pr.currency || results[i].currency;
+          results[i].priceEur = pr.priceEur;
+        }
       } catch(e) {}
-      results.push({
-        symbol: q.symbol,
-        name: q.longname || q.shortname || q.symbol,
-        price, currency,
-        exchange: q.exchDisp || q.exchange || '',
-        priceEur
-      });
-    }
-    return results.length > 0 ? results : null;
+    })).then(() => {
+      // Re-render suggestions avec les prix mis à jour
+      const currentInput = document.getElementById('pos-ticker-input').value;
+      if (currentInput.length >= 2) renderSuggestions(results);
+    });
+
+    return results;
   } catch(e) { console.error('searchTickers:', e); return null; }
 }
 
