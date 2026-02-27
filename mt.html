@@ -747,14 +747,21 @@ function timeAgo(ts) {
 function renderAllocation() {
   const el=document.getElementById('allocContent');
   if (positions.length===0) { el.innerHTML='<div class="empty-state">Ajoutez des positions</div>'; return; }
-  const total=positions.reduce((s,p)=>s+p.current*p.qty,0);
+  const livretTotalAlloc=accounts.filter(a=>a.type==='Livret').reduce((s,a)=>s+(a.solde||0),0);
+  const total=positions.reduce((s,p)=>s+p.current*p.qty,0)+livretTotalAlloc;
   const map={};
   positions.forEach(p=>{ if(!map[p.symbol])map[p.symbol]={val:0,name:p.name}; map[p.symbol].val+=p.current*p.qty; });
+  // Ajouter les livrets dans l'allocation
+  accounts.filter(a=>a.type==='Livret' && a.solde>0).forEach(a=>{
+    const key='Livret:'+a.id;
+    map[key]={val:a.solde,name:a.name};
+  });
   const sorted=Object.entries(map).sort((a,b)=>b[1].val-a[1].val);
   el.innerHTML=sorted.map(([sym,d],i)=>{
     const pct=total>0?(d.val/total*100):0;
+    const displaySym=sym.startsWith('Livret:')?'💰 '+d.name:sym;
     return `<div class="alloc-row">
-      <div class="alloc-label"><span class="alloc-name">${sym} <span style="color:var(--muted);font-size:0.65rem">${d.name||''}</span></span><span class="alloc-pct">${fmt(pct)}% — ${fmtEur(d.val)}</span></div>
+      <div class="alloc-label"><span class="alloc-name">${sym.startsWith('Livret:') ? '💰 '+d.name : sym} <span style="color:var(--muted);font-size:0.65rem">${sym.startsWith('Livret:') ? '' : d.name||''}</span></span><span class="alloc-pct">${fmt(pct)}% — ${fmtEur(d.val)}</span></div>
       <div class="alloc-bar-wrap"><div class="alloc-bar" style="width:${pct}%;background:${ALLOC_COLORS[i%ALLOC_COLORS.length]}"></div></div>
     </div>`;
   }).join('');
