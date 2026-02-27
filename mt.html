@@ -611,6 +611,19 @@
 // ─── SUPABASE INIT ────────────────────────────────────────────────────────────
 const SUPA_URL = 'https://tjmbrwazzuhbsufxbjpu.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqbWJyd2F6enVoYnN1ZnhianB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTAwNTAsImV4cCI6MjA4Nzc4NjA1MH0.d4tplwCcMvcelCqqTMA6oh4Ur2phngwamrIJOjBXxog';
+// Nettoie le token Supabase expiré AVANT l'init du SDK
+// (sinon le SDK tente un refresh qui ne revient jamais et bloque tout)
+try {
+  const supaTokenKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+  if (supaTokenKey) {
+    const tokenData = JSON.parse(localStorage.getItem(supaTokenKey) || '{}');
+    const expiresAt = tokenData?.expires_at;
+    if (!expiresAt || Date.now() / 1000 > expiresAt) {
+      localStorage.removeItem(supaTokenKey);
+    }
+  }
+} catch(e) {}
+
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
@@ -692,6 +705,8 @@ document.addEventListener('click', e => {
 });
 async function signOut() {
   await sb.auth.signOut();
+  // Nettoie les tokens Supabase du localStorage
+  Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
 }
 window.toggleUserMenu = toggleUserMenu;
 window.signOut = signOut;
@@ -708,13 +723,29 @@ function updateUserUI(user) {
 // ─── DB LOAD ──────────────────────────────────────────────────────────────────
 async function loadAllData() {
   const uid = currentUser.id;
-  const [accRes, posRes, prelRes, txRes, histRes] = await Promise.all([
-    sb.from('accounts').select('*').eq('user_id', uid).order('created_at'),
-    sb.from('positions').select('*').eq('user_id', uid).order('created_at'),
-    sb.from('prelevements').select('*').eq('user_id', uid).order('created_at'),
-    sb.from('transactions').select('*').eq('user_id', uid).order('ts', { ascending: false }),
-    sb.from('patrimoine_history').select('*').eq('user_id', uid).order('date'),
+
+  // Petit délai pour laisser le SDK finir son _recoverAndRefresh avant d'envoyer des requêtes
+  await new Promise(r => setTimeout(r, 300));
+
+  // Timeout de sécurité — si Supabase ne répond pas en 8s on abandonne
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+
+  const [accRes, posRes, prelRes, txRes, histRes] = await Promise.race([
+    Promise.all([
+      sb.from('accounts').select('*').eq('user_id', uid).order('created_at'),
+      sb.from('positions').select('*').eq('user_id', uid).order('created_at'),
+      sb.from('prelevements').select('*').eq('user_id', uid).order('created_at'),
+      sb.from('transactions').select('*').eq('user_id', uid).order('ts', { ascending: false }),
+      sb.from('patrimoine_history').select('*').eq('user_id', uid).order('date'),
+    ]),
+    timeout.then(() => { throw new Error('timeout'); })
   ]);
+
+  // Si une requête retourne une erreur d'auth → forcer logout
+  if (accRes.error?.status === 401 || posRes.error?.status === 401) {
+    await sb.auth.signOut();
+    throw new Error('auth_expired');
+  }
 
   accounts = (accRes.data || []).map(a => ({
     id: a.id, name: a.name, type: a.type, solde: a.solde
@@ -1918,7 +1949,28 @@ async function initApp(user) {
   currentUser = user;
   filteredTypes = null;
   updateUserUI(user);
-  await loadAllData();
+  try {
+    await loadAllData();
+  } catch(e) {
+    console.warn('loadAllData error:', e.message);
+    if (e.message === 'timeout') {
+      // Réessaie une fois après 1s supplémentaire
+      try {
+        await new Promise(r => setTimeout(r, 1000));
+        await loadAllData();
+      } catch(e2) {
+        await sb.auth.signOut();
+        currentUser = null;
+        showLogin();
+        return;
+      }
+    } else {
+      await sb.auth.signOut();
+      currentUser = null;
+      showLogin();
+      return;
+    }
+  }
   document.getElementById('loadingOverlay').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
@@ -1926,7 +1978,6 @@ async function initApp(user) {
   renderPrelevements();
   renderChart();
   animateSections();
-  // Affiche le chien après un court délai (laisser le temps au render)
   setTimeout(() => showDog(user), 400);
   if (positions.length > 0) refreshAllPrices();
   setInterval(() => { if (positions.length > 0) refreshAllPrices(); }, 5 * 60 * 1000);
@@ -1950,39 +2001,31 @@ if (!localStorage.getItem('pt_migration_done')) {
 
 document.getElementById('loadingOverlay').style.display = 'flex';
 
-// Utilise onAuthStateChange comme méthode principale — plus fiable au refresh
-let authResolved = false;
-
 sb.auth.onAuthStateChange(async (event, session) => {
-  if (authResolved) {
-    // Changements post-init (login / logout)
-    if (event === 'SIGNED_IN' && session?.user && !currentUser) {
-      await initApp(session.user);
-    } else if (event === 'SIGNED_OUT') {
-      currentUser = null;
-      accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = [];
-      const dog = document.getElementById('dogWidget');
-      if (dog) dog.style.display = 'none';
+  console.log('auth event:', event, session?.user?.email);
+  if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+    if (session?.user) {
+      if (!currentUser) await initApp(session.user);
+    } else {
       showLogin();
     }
-    return;
-  }
-  // Premier événement au chargement
-  authResolved = true;
-  if (session?.user) {
-    await initApp(session.user);
-  } else {
+  } else if (event === 'SIGNED_OUT') {
+    currentUser = null;
+    accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = [];
+    const dog = document.getElementById('dogWidget');
+    if (dog) dog.style.display = 'none';
     showLogin();
+  } else if (event === 'TOKEN_REFRESHED') {
+    // Session rafraîchie, rien à faire
   }
 });
 
-// Fallback : si onAuthStateChange ne se déclenche pas dans les 4s → login
+// Fallback : si rien ne se passe en 6s → login
 setTimeout(() => {
-  if (!authResolved) {
-    authResolved = true;
+  if (!currentUser && document.getElementById('loadingOverlay').style.display !== 'none') {
     showLogin();
   }
-}, 4000);
+}, 6000);
 
 window.addEventListener('resize', () => renderChart());
 </script>
