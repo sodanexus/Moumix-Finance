@@ -310,21 +310,23 @@
     <div class="login-logo">Moumix<span> Finance</span></div>
     <div class="login-sub">Suivi de patrimoine personnel</div>
     <div class="login-tabs">
-      <button class="login-tab active" id="tabLogin" onclick="switchAuthTab('login')">Connexion</button>
-      <button class="login-tab" id="tabSignup" onclick="switchAuthTab('signup')">Créer un compte</button>
+      <button type="button" class="login-tab active" id="tabLogin" onclick="switchAuthTab('login')">Connexion</button>
+      <button type="button" class="login-tab" id="tabSignup" onclick="switchAuthTab('signup')">Créer un compte</button>
     </div>
-    <div class="form-row">
-      <label>Email</label>
-      <input type="email" id="auth-email" placeholder="julien@exemple.com" onkeydown="if(event.key==='Enter')submitAuth()">
-    </div>
-    <div class="form-row">
-      <label>Mot de passe</label>
-      <input type="password" id="auth-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')submitAuth()">
-    </div>
-    <div id="auth-error" class="login-error"></div>
-    <div style="margin-top:16px">
-      <button class="btn btn-primary" style="width:100%;padding:11px" onclick="submitAuth()" id="authSubmitBtn">Se connecter</button>
-    </div>
+    <form onsubmit="event.preventDefault(); submitAuth()" autocomplete="on">
+      <div class="form-row">
+        <label>Email</label>
+        <input type="email" id="auth-email" name="email" placeholder="julien@exemple.com" autocomplete="email">
+      </div>
+      <div class="form-row">
+        <label>Mot de passe</label>
+        <input type="password" id="auth-password" name="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div id="auth-error" class="login-error"></div>
+      <div style="margin-top:16px">
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:11px" id="authSubmitBtn">Se connecter</button>
+      </div>
+    </form>
   </div>
 </div>
 
