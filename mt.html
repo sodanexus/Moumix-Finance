@@ -1940,27 +1940,49 @@ function showLogin() {
 
 // Auth state listener — point d'entrée principal
 // D'abord on vérifie la session existante (cas refresh page)
+// Nettoyage des vieilles clés localStorage (migration pré-Supabase)
+const LEGACY_KEYS = ['pt_accounts','pt_positions','pt_prelevements','pt_history','pt_patrimoine_history','pt_transactions','pt_filteredTypes'];
+if (!localStorage.getItem('pt_migration_done')) {
+  LEGACY_KEYS.forEach(k => localStorage.removeItem(k));
+  localStorage.setItem('pt_migration_done', '1');
+}
+
+
 document.getElementById('loadingOverlay').style.display = 'flex';
-sb.auth.getSession().then(({ data: { session } }) => {
+
+// Utilise onAuthStateChange comme méthode principale — plus fiable au refresh
+let authResolved = false;
+
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (authResolved) {
+    // Changements post-init (login / logout)
+    if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+      await initApp(session.user);
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = [];
+      const dog = document.getElementById('dogWidget');
+      if (dog) dog.style.display = 'none';
+      showLogin();
+    }
+    return;
+  }
+  // Premier événement au chargement
+  authResolved = true;
   if (session?.user) {
-    initApp(session.user);
+    await initApp(session.user);
   } else {
     showLogin();
   }
 });
 
-// Ensuite on écoute les changements (login / logout)
-sb.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'SIGNED_IN' && session?.user && !currentUser) {
-    await initApp(session.user);
-  } else if (event === 'SIGNED_OUT') {
-    currentUser = null;
-    accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = [];
-    const dog = document.getElementById('dogWidget');
-    if (dog) dog.style.display = 'none';
+// Fallback : si onAuthStateChange ne se déclenche pas dans les 4s → login
+setTimeout(() => {
+  if (!authResolved) {
+    authResolved = true;
     showLogin();
   }
-});
+}, 4000);
 
 window.addEventListener('resize', () => renderChart());
 </script>
