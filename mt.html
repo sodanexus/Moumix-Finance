@@ -216,6 +216,43 @@
   .loading-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 998; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; }
   .loading-overlay .spin { width: 32px; height: 32px; border-width: 3px; }
 
+  /* ANIMATIONS GLOBALES */
+  @keyframes fadeInUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes fadeInScale { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
+  @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+  @keyframes barGrow { from { width:0 !important; } to { } }
+  @keyframes wagTail { 0%,100%{transform:rotate(0deg) translateX(0)} 25%{transform:rotate(25deg) translateX(2px)} 75%{transform:rotate(-25deg) translateX(-2px)} }
+  @keyframes dogBounceIn { 0%{opacity:0;transform:translateY(60px) scale(0.5)} 60%{transform:translateY(-8px) scale(1.08)} 80%{transform:translateY(4px) scale(0.97)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+  @keyframes bubbleFadeIn { from{opacity:0;transform:translateY(8px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
+  @keyframes bubbleFadeOut { from{opacity:1;transform:scale(1)} to{opacity:0;transform:scale(0.9) translateY(4px)} }
+  @keyframes dogShake { 0%,100%{transform:translateX(0) rotate(0deg)} 15%{transform:translateX(-6px) rotate(-5deg)} 30%{transform:translateX(6px) rotate(5deg)} 45%{transform:translateX(-5px) rotate(-3deg)} 60%{transform:translateX(5px) rotate(3deg)} 75%{transform:translateX(-3px) rotate(-1deg)} 90%{transform:translateX(3px) rotate(1deg)} }
+  @keyframes dogIdle { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+  @keyframes wafPop { 0%{opacity:0;transform:translate(-50%,-100%) scale(0.6)} 40%{transform:translate(-50%,-110%) scale(1.15)} 100%{opacity:1;transform:translate(-50%,-105%) scale(1)} }
+  @keyframes wafFade { to{opacity:0;transform:translate(-50%,-120%) scale(0.8)} }
+
+  .fade-in-up { animation: fadeInUp 0.45s ease both; }
+  .alloc-bar { animation: barGrow 0.7s cubic-bezier(0.34,1.2,0.64,1) both; }
+  .card { transition: border-color 0.25s, box-shadow 0.25s; }
+  .card:hover { box-shadow: 0 4px 24px rgba(0,229,160,0.06); }
+  .account-card { transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+  .total-value { transition: all 0.5s cubic-bezier(0.34,1.2,0.64,1); }
+
+  /* CHIEN */
+  .dog-widget { position:fixed; bottom:24px; right:24px; z-index:300; display:flex; flex-direction:column; align-items:center; cursor:pointer; user-select:none; }
+  .dog-welcome-bubble { position:absolute; bottom:calc(100% + 12px); right:0; background:var(--surface2); border:1px solid var(--border); border-radius:14px 14px 2px 14px; padding:14px 16px; width:260px; box-shadow:0 8px 32px rgba(0,0,0,0.4); animation:bubbleFadeIn 0.4s cubic-bezier(0.34,1.2,0.64,1) both; pointer-events:none; }
+  .dog-welcome-bubble.hiding { animation:bubbleFadeOut 0.3s ease forwards; }
+  .dog-bubble-name { font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:0.95rem; margin-bottom:6px; }
+  .dog-bubble-name span { color:var(--accent); }
+  .dog-bubble-stat { font-size:0.72rem; color:var(--muted); line-height:1.6; }
+  .dog-bubble-stat strong { color:var(--text); font-weight:600; }
+  .dog-svg-wrap { animation:dogBounceIn 0.7s cubic-bezier(0.34,1.2,0.64,1) both; animation-delay:0.1s; }
+  .dog-svg-wrap.idle { animation:dogIdle 2.8s ease-in-out infinite; }
+  .dog-svg-wrap.shaking { animation:dogShake 0.5s ease; }
+  .dog-tail { transform-origin:2px 8px; animation:wagTail 0.5s ease-in-out infinite; }
+  .dog-tail.fast { animation-duration:0.25s; }
+  .waf-bubble { position:absolute; bottom:calc(100% + 8px); left:50%; transform:translate(-50%,-105%); background:var(--accent); color:#000; font-weight:700; font-size:0.72rem; padding:4px 10px; border-radius:12px; animation:wafPop 0.3s cubic-bezier(0.34,1.4,0.64,1) forwards; pointer-events:none; white-space:nowrap; }
+  .waf-bubble.fade { animation:wafFade 0.3s ease forwards; }
+
   /* ─── GRAPHIQUE PATRIMOINE ─── */
   .chart-card { margin-bottom: 24px; }
   .chart-periods { display:flex; gap:4px; }
@@ -520,6 +557,51 @@
       <button class="btn" onclick="closeModal('position')">Annuler</button>
       <button class="btn btn-primary" id="addPosBtn" onclick="confirmPosition()" disabled>Valider</button>
     </div>
+  </div>
+</div>
+
+<!-- CHIEN MASCOTTE -->
+<div class="dog-widget" id="dogWidget" style="display:none" onclick="dogClick()">
+  <div id="dogBubble" class="dog-welcome-bubble" style="display:none"></div>
+  <div id="wafBubble" style="position:relative;width:0;height:0"></div>
+  <div class="dog-svg-wrap" id="dogSvgWrap">
+    <!-- Shiba Inu SVG stylisé -->
+    <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Queue -->
+      <g class="dog-tail" id="dogTail" transform="translate(52,38)">
+        <path d="M0 8 Q12 0 16 -8 Q18 -14 12 -16 Q6 -14 4 -8 Q2 0 0 8Z" fill="#e8a455"/>
+        <path d="M4 6 Q10 2 13 -5 Q14 -10 10 -12" stroke="#c47a2a" stroke-width="1" fill="none" stroke-linecap="round"/>
+      </g>
+      <!-- Corps -->
+      <ellipse cx="34" cy="46" rx="20" ry="16" fill="#e8a455"/>
+      <!-- Ventre -->
+      <ellipse cx="34" cy="50" rx="12" ry="10" fill="#f5d0a0"/>
+      <!-- Tête -->
+      <ellipse cx="34" cy="26" rx="18" ry="17" fill="#e8a455"/>
+      <!-- Oreilles -->
+      <path d="M18 16 L14 4 L24 12Z" fill="#c47a2a"/>
+      <path d="M50 16 L58 4 L48 12Z" fill="#c47a2a"/>
+      <!-- Museau -->
+      <ellipse cx="34" cy="32" rx="10" ry="7" fill="#f5d0a0"/>
+      <!-- Nez -->
+      <ellipse cx="34" cy="28" rx="4" ry="3" fill="#2a1a0a"/>
+      <!-- Reflet nez -->
+      <ellipse cx="33" cy="27" rx="1.2" ry="1" fill="rgba(255,255,255,0.5)"/>
+      <!-- Yeux -->
+      <ellipse cx="26" cy="22" rx="4" ry="4.5" fill="#2a1a0a"/>
+      <ellipse cx="42" cy="22" rx="4" ry="4.5" fill="#2a1a0a"/>
+      <!-- Reflets yeux -->
+      <ellipse cx="24.5" cy="20.5" rx="1.5" ry="1.5" fill="white"/>
+      <ellipse cx="40.5" cy="20.5" rx="1.5" ry="1.5" fill="white"/>
+      <!-- Bouche -->
+      <path d="M30 34 Q34 38 38 34" stroke="#c47a2a" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <!-- Pattes avant -->
+      <rect x="20" y="56" width="8" height="10" rx="4" fill="#e8a455"/>
+      <rect x="44" y="56" width="8" height="10" rx="4" fill="#e8a455"/>
+      <!-- Joues -->
+      <ellipse cx="22" cy="30" rx="4" ry="3" fill="rgba(255,150,100,0.3)"/>
+      <ellipse cx="46" cy="30" rx="4" ry="3" fill="rgba(255,150,100,0.3)"/>
+    </svg>
   </div>
 </div>
 
@@ -1188,10 +1270,11 @@ function getAccountType(id) { const a=accounts.find(a=>a.id===id); return a?a.ty
 function renderAccounts() {
   const grid = document.getElementById('accountsGrid');
   if (accounts.length===0) { grid.innerHTML='<div class="empty-state" style="grid-column:1/-1">Aucun compte — cliquez sur "+ Compte"</div>'; return; }
-  grid.innerHTML = accounts.map(a => {
+  grid.innerHTML = accounts.map((a, idx) => {
+    const animStyle = `animation:fadeInUp 0.35s ease ${idx * 0.05}s both;`;
     if (a.type === 'Livret' || a.type === 'Immo' || a.type === 'Autre') {
       const solde = a.solde || 0;
-      return `<div class="account-card">
+      return `<div class="account-card" style="${animStyle}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div class="account-type">${a.name}</div>
           <button class="del-btn" onclick="deleteAccount('${a.id}')">✕</button>
@@ -1223,7 +1306,7 @@ function renderAccounts() {
     const cost=myPos.reduce((s,p)=>s+p.price*p.qty,0);
     const pnl=total-cost; const pct=cost>0?(pnl/cost*100):0;
     const pnlColor=pnl>=0?'var(--gain)':'var(--loss)';
-    return `<div class="account-card">
+    return `<div class="account-card" style="${animStyle}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div class="account-type">${a.name}</div>
         <button class="del-btn" onclick="deleteAccount('${a.id}')">✕</button>
@@ -1715,10 +1798,123 @@ function renderPrelevements() {
   document.getElementById('prelYearly').textContent = '-' + fmtEur(totalMonthly * 12);
 }
 
+// ─── CHIEN MASCOTTE ───────────────────────────────────────────────────────────
+let dogBubbleTimer = null;
+let dogWafTimer = null;
+
+function showDog(user) {
+  const widget = document.getElementById('dogWidget');
+  const bubble = document.getElementById('dogBubble');
+  const svgWrap = document.getElementById('dogSvgWrap');
+  const tail = document.querySelector('.dog-tail');
+
+  widget.style.display = 'flex';
+  svgWrap.className = 'dog-svg-wrap'; // reset, bounce in
+
+  // Calcul recap patrimoine
+  const total = computeCurrentPatrimoine();
+  const cost = positions.reduce((s,p) => s + p.price * p.qty, 0);
+  const pnl = total - cost;
+  const name = (user.email || '').split('@')[0];
+  const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir';
+
+  const pnlStr = pnl >= 0
+    ? `<strong style="color:var(--gain)">+${fmtEur(pnl)}</strong>`
+    : `<strong style="color:var(--loss)">${fmtEur(pnl)}</strong>`;
+
+  bubble.innerHTML = `
+    <div class="dog-bubble-name">🐾 ${greeting}, <span>${displayName}</span> !</div>
+    <div class="dog-bubble-stat">
+      Patrimoine : <strong>${fmtEur(total)}</strong><br>
+      P&L total : ${pnlStr}<br>
+      ${positions.length} position${positions.length > 1 ? 's' : ''} active${positions.length > 1 ? 's' : ''}
+    </div>`;
+  bubble.style.display = 'block';
+  bubble.className = 'dog-welcome-bubble';
+
+  // Tail wag rapide au début
+  if (tail) tail.classList.add('fast');
+  setTimeout(() => { if (tail) tail.classList.remove('fast'); }, 2000);
+
+  // Bulle disparaît après 5s
+  dogBubbleTimer = setTimeout(() => {
+    bubble.classList.add('hiding');
+    setTimeout(() => {
+      bubble.style.display = 'none';
+      bubble.classList.remove('hiding');
+      // Passe en idle float
+      svgWrap.className = 'dog-svg-wrap idle';
+    }, 300);
+  }, 5000);
+}
+
+function dogClick() {
+  const svgWrap = document.getElementById('dogSvgWrap');
+  const wafWrap = document.getElementById('wafBubble');
+
+  // Shake
+  svgWrap.classList.remove('shaking', 'idle');
+  void svgWrap.offsetWidth; // reflow
+  svgWrap.classList.add('shaking');
+
+  // Waf!
+  if (dogWafTimer) clearTimeout(dogWafTimer);
+  wafWrap.innerHTML = '<div class="waf-bubble">Waf ! 🐾</div>';
+  dogWafTimer = setTimeout(() => {
+    const waf = wafWrap.querySelector('.waf-bubble');
+    if (waf) {
+      waf.classList.add('fade');
+      setTimeout(() => { wafWrap.innerHTML = ''; }, 300);
+    }
+  }, 900);
+
+  setTimeout(() => {
+    svgWrap.classList.remove('shaking');
+    svgWrap.classList.add('idle');
+  }, 500);
+}
+window.dogClick = dogClick;
+
+// ─── ANIMATIONS DE PAGE ───────────────────────────────────────────────────────
+function animateValue(el, start, end, duration) {
+  if (!el) return;
+  const startTime = performance.now();
+  const update = (now) => {
+    const t = Math.min((now - startTime) / duration, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    const val = start + (end - start) * ease;
+    // On remplace juste le nombre dans le texte existant
+    el.classList.add('fade-in-up');
+  };
+  requestAnimationFrame(update);
+}
+
+function animateSections() {
+  // Fade in des grandes sections avec délai progressif
+  const sections = [
+    document.querySelector('.total-banner'),
+    document.querySelector('.chart-card'),
+    document.querySelector('.accounts-grid'),
+  ];
+  sections.forEach((el, i) => {
+    if (!el) return;
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(16px)';
+    setTimeout(() => {
+      el.style.transition = 'opacity 0.45s ease, transform 0.45s ease';
+      el.style.opacity = '1';
+      el.style.transform = 'translateY(0)';
+    }, 100 + i * 80);
+  });
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function initApp(user) {
   currentUser = user;
-  filteredTypes = null; // reset filters for this user
+  filteredTypes = null;
   updateUserUI(user);
   await loadAllData();
   document.getElementById('loadingOverlay').style.display = 'none';
@@ -1727,6 +1923,9 @@ async function initApp(user) {
   renderAll();
   renderPrelevements();
   renderChart();
+  animateSections();
+  // Affiche le chien après un court délai (laisser le temps au render)
+  setTimeout(() => showDog(user), 400);
   if (positions.length > 0) refreshAllPrices();
   setInterval(() => { if (positions.length > 0) refreshAllPrices(); }, 5 * 60 * 1000);
 }
