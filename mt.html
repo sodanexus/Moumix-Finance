@@ -378,7 +378,7 @@ async function searchTickers(query) {
     });
 
     return results;
-  } catch(e) { console.error('searchTickers:', e); return null; }
+  } catch(e) { console.error('searchTickers ERROR:', e.message, e.stack); return null; }
 }
 
 // ─── TICKER INPUT ─────────────────────────────────────────────────────────────
@@ -695,6 +695,22 @@ function renderSummary() {
 }
 
 function renderAll() { renderAccounts(); renderPositions(); renderAllocation(); renderByAccount(); renderSummary(); }
+
+// ─── EXPOSE GLOBALS ──────────────────────────────────────────────────────────
+window.yfFetch = yfFetch;
+window.searchTickers = searchTickers;
+window.fetchQuote = fetchQuote;
+window.fetchPrice = fetchPrice;
+window.onTickerInput = onTickerInput;
+window.onTickerKeydown = onTickerKeydown;
+window.selectTicker = selectTicker;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.addAccount = addAccount;
+window.addPosition = addPosition;
+window.deletePosition = deletePosition;
+window.deleteAccount = deleteAccount;
+window.refreshAllPrices = refreshAllPrices;
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 positions.forEach(p=>{ if(!positionHistory[p.id])positionHistory[p.id]=generateHistory(p.current,12); });
