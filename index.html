@@ -68,7 +68,7 @@
   .account-type { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 4px; }
   .account-total { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.88rem; font-weight: 600; }
   .account-perf { font-size: 0.68rem; margin-top: 1px; }
-  .btn { font-family: 'Inter', sans-serif; font-size: 0.78rem; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; transition: all 0.2s; letter-spacing: 0.02em; }
+  .btn { font-family: 'Inter', sans-serif; font-size: 0.78rem; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; transition: all 0.2s; letter-spacing: 0.02em; overflow: hidden; position: relative; }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 500; }
   .btn-primary:hover { background: #00ffb3; border-color: #00ffb3; color: #000; }
@@ -220,9 +220,9 @@
   .news-card {
     background:var(--surface); border:1px solid var(--border); border-radius:12px;
     padding:16px 18px; display:flex; gap:14px; align-items:flex-start;
-    transition:border-color 0.2s, transform 0.2s; cursor:pointer; text-decoration:none;
+    transition:border-color 0.2s, transform 0.2s, box-shadow 0.2s; cursor:pointer; text-decoration:none;
   }
-  .news-card:hover { border-color:rgba(0,229,160,0.35); transform:translateY(-1px); }
+  .news-card:hover { border-color:rgba(0,229,160,0.35); transform:translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,0.3); }
   .news-source-badge {
     font-size:0.6rem; padding:2px 7px; border-radius:4px;
     background:rgba(0,112,243,0.12); color:#5ba4ff;
@@ -286,17 +286,12 @@
   }
 
   /* Ripple sur boutons */
-  .btn { overflow: hidden; position: relative; }
   .btn-ripple {
     position: absolute; border-radius: 50%; background: rgba(255,255,255,0.2);
     width: 20px; height: 20px; margin-left: -10px; margin-top: -10px;
     animation: ripple 0.5s ease-out forwards; pointer-events: none;
   }
   .btn-primary .btn-ripple { background: rgba(0,0,0,0.15); }
-
-  /* News cards */
-  .news-card { transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s; }
-  .news-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,0.3); }
 
   /* Index pills animation */
   .index-pill { transition: border-color 0.2s, transform 0.2s; }
@@ -433,6 +428,7 @@
   .metric-label { font-size:0.6rem; color:var(--muted); margin-bottom:3px; }
   .metric-label-sm { font-size:0.6rem; color:var(--muted); margin-bottom:2px; }
   .tt-row { display:flex; gap:10px; align-items:center; justify-content:space-between; }
+  .flex-gap { display:flex; align-items:center; gap:6px; }
   .flex-gap5 { display:flex; align-items:center; gap:5px; }
   .flex-gap6 { display:flex; align-items:center; gap:6px; }
 
@@ -537,23 +533,17 @@
     #sim-res-total-real { font-size: 1rem !important; }
     #sim-res-total-pess, #sim-res-total-opti { font-size: 0.95rem !important; }
 
-    /* ── Graphique simulateur : header en colonne + plus de hauteur ── */
-    #tab-simulator .card-header {
+    /* ── Légende graphique simulateur en colonne sur mobile ── */
+    .chart-card .card-header > div:last-child,
+    #tab-simulator .card-header > div:last-child {
       flex-direction: column;
       align-items: flex-start;
       gap: 8px;
     }
-    #tab-simulator .card-header > div:last-child {
-      width: 100%;
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: nowrap;
-      gap: 8px;
-    }
-    #tab-simulator .card-header div[style*="gap:12px"] { gap: 8px !important; }
-    #sim-graph-wrap { height: 220px !important; }
-    #sim-svg { height: 220px !important; }
+
+    /* ── Graphique simulateur : hauteur réduite ── */
+    #sim-graph-wrap { height: 200px !important; }
+    #sim-svg { height: 200px !important; }
 
     /* ── Chart évolution patrimoine ── */
     .chart-card .card-header {
@@ -596,11 +586,11 @@
 
     /* ── Dog widget : réduit sur mobile ── */
     .dog-widget { bottom: 16px; right: 16px; }
-    .dog-welcome-bubble { right: 16px; width: 240px; }
+    .dog-welcome-bubble { right: 16px; width: min(240px, calc(100vw - 32px)); }
     .waf-bubble { right: 16px; }
 
     /* ── Drawer transactions : plein écran ── */
-    .drawer { width: 100%; border-left: none; border-top: 1px solid var(--border); border-radius: 16px 16px 0 0; top: auto; height: 85vh; }
+    .drawer { width: 100%; border-left: none; border-top: 1px solid var(--border); border-radius: 16px 16px 0 0; top: auto; bottom: 0; height: 85vh; }
 
     /* ── Page title ── */
     .page-title { font-size: 1.1rem; }
@@ -611,6 +601,25 @@
     /* ── Filter toggles ── */
     .filter-toggles { gap: 6px; }
     .filter-toggle { font-size: 0.62rem; padding: 3px 8px; }
+
+    /* ── Badge "Votre taux" : inline sur mobile ── */
+    .votre-taux-badge {
+      position: static !important;
+      transform: none !important;
+      display: inline-block;
+      margin-bottom: 4px;
+      border-radius: 4px !important;
+      font-size: 0.48rem !important;
+      padding: 1px 5px !important;
+    }
+
+    /* ── Touch scroll sur tabs : pan horizontal seulement ── */
+    .tabs-nav { overflow-y: hidden; touch-action: pan-x; }
+    .tab-btn  { touch-action: manipulation; }
+
+    /* ── Dog widget : caché quand l'user scroll ── */
+    .dog-widget { transition: opacity 0.3s, transform 0.3s; }
+    .dog-hidden { opacity: 0 !important; transform: translateY(20px) !important; pointer-events: none !important; }
   }
 
   /* ── Très petits écrans (≤ 380px) : ajustements supplémentaires ── */
@@ -930,7 +939,7 @@
 
                 <!-- Réaliste -->
                 <div style="background:var(--surface);padding:14px 12px;text-align:center;border-left:1px solid var(--border);border-right:1px solid var(--border);position:relative">
-                  <div style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:var(--accent);color:#000;font-size:0.55rem;font-weight:700;padding:2px 8px;border-radius:0 0 6px 6px;text-transform:uppercase;letter-spacing:0.08em">Votre taux</div>
+                  <div class="votre-taux-badge" style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:var(--accent);color:#000;font-size:0.55rem;font-weight:700;padding:2px 8px;border-radius:0 0 6px 6px;text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap">Votre taux</div>
                   <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent);margin-bottom:4px;margin-top:6px">Réaliste</div>
                   <div id="sim-rate-real" class="sim-rate-label">7,0%</div>
                   <div id="sim-res-total-real" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.25rem;background:linear-gradient(135deg,#fff,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px">—</div>
@@ -1091,7 +1100,7 @@
     </div>
   </div>
 </div>
-<div class="modal-overlay" id="accountModal">
+<div class="modal-overlay" id="accountModal" onclick="if(event.target===this)closeModal('account')">
   <div class="modal">
     <h2>Nouveau compte</h2>
     <div class="form-row">
@@ -1120,7 +1129,7 @@
 </div>
 
 <!-- MODAL POSITION -->
-<div class="modal-overlay" id="positionModal">
+<div class="modal-overlay" id="positionModal" onclick="if(event.target===this)closeModal('position')">
   <div class="modal">
     <!-- Toggle Achat / Vente -->
     <div style="display:flex;gap:8px;margin-bottom:20px">
@@ -1219,7 +1228,6 @@ let patrimoineHistory = [];
 let transactions = [];
 let selectedTicker = null;
 let searchTimeout = null;
-let _currentSearchQuery = '';
 let suggestionsIndex = -1;
 let currentChartPeriod = '1S';
 let _eurUsdInterval = null;
@@ -1247,7 +1255,7 @@ function switchTab(name, btn) {
     document.getElementById('tab-' + name).classList.add('active');
     if (btn) btn.classList.add('active');
     if (name === 'details') { renderAccounts(); renderPositions(); renderPrelevements(); }
-    if (name === 'simulator') { simUpdate(); renderGoals(); }
+    if (name === 'simulator') { renderGoals(); requestAnimationFrame(() => simUpdate()); }
     if (name === 'news') { loadNews(); loadNewsIndices(); }
   }, current ? 120 : 0);
 }
@@ -1612,7 +1620,6 @@ function onTickerInput(val) {
     return;
   }
   showSearchStatus('Recherche en cours…');
-  _currentSearchQuery = val;
   searchTimeout = setTimeout(async () => {
     try {
       const results = await searchTickers(val);
@@ -1795,9 +1802,6 @@ function openModal(type) {
   document.getElementById(type + 'Modal').classList.add('open');
 }
 function closeModal(type) { document.getElementById(type + 'Modal').classList.remove('open'); }
-document.querySelectorAll('.modal-overlay').forEach(o => {
-  o.addEventListener('click', e => { if(e.target === o) o.classList.remove('open'); });
-});
 
 // ─── ADD ACCOUNT ──────────────────────────────────────────────────────────────
 function onAccTypeChange(val) {
@@ -2317,7 +2321,7 @@ function showToast(msg, type = 'error') {
   if (!toast) {
     toast = document.createElement('div');
     toast.id = 'saveToast';
-    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;padding:10px 18px;border-radius:10px;font-size:0.78rem;font-family:Inter,sans-serif;pointer-events:none;transition:opacity 0.3s;opacity:0;white-space:nowrap';
+    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:9999;padding:10px 18px;border-radius:10px;font-size:0.78rem;font-family:Inter,sans-serif;pointer-events:none;transition:opacity 0.3s;opacity:0;white-space:nowrap';
     document.body.appendChild(toast);
   }
   toast.style.background = type === 'error' ? 'rgba(255,68,102,0.95)' : 'rgba(0,229,160,0.95)';
@@ -2657,7 +2661,7 @@ function renderChart() {
 
   const W = wrap.clientWidth || 800;
   const H = 200;
-  const pad = { top: 16, right: 20, bottom: 32, left: 60 };
+  const pad = { top: 16, right: 20, bottom: 32, left: W < 400 ? 48 : 60 };
   const iW = W - pad.left - pad.right;
   const iH = H - pad.top - pad.bottom;
 
@@ -2704,13 +2708,20 @@ function renderChart() {
     return `<circle cx="${x}" cy="${y}" r="3.5" fill="${lineColor}" opacity="0.9"/>`;
   }).join('');
 
-  // Y axis labels
+  // Y axis labels — format compact si petit écran
   const yTicks = 4;
+  const useCompact = W < 400;
+  function fmtYAxis(v) {
+    if (!useCompact) return fmtEur(v).replace(/\s/g,'\u202F');
+    if (Math.abs(v) >= 1000000) return (v/1000000).toFixed(1) + 'M€';
+    if (Math.abs(v) >= 1000)    return (v/1000).toFixed(0) + 'k€';
+    return Math.round(v) + '€';
+  }
   let yAxisHTML = '';
   for (let i = 0; i <= yTicks; i++) {
     const v = minV + (range * i / yTicks);
     const y = yScale(v);
-    yAxisHTML += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="#5a6478" font-family="DM Mono,monospace">${fmtEur(v).replace(/\s/g,'\u202F')}</text>`;
+    yAxisHTML += `<text x="${pad.left - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="#5a6478" font-family="DM Mono,monospace">${fmtYAxis(v)}</text>`;
     yAxisHTML += `<line x1="${pad.left}" y1="${y}" x2="${pad.left + iW}" y2="${y}" stroke="#1e2530" stroke-width="1" stroke-dasharray="4,4"/>`;
   }
 
@@ -3053,24 +3064,6 @@ document.addEventListener('click', e => {
   btn.appendChild(r);
   setTimeout(() => r.remove(), 500);
 });
-function animateSections() {
-  const sections = document.querySelectorAll(
-    '#tab-overview .total-banner, #tab-overview .chart-card, #tab-overview .grid .card'
-  );
-  sections.forEach((el, i) => {
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(20px)';
-    el.style.transition = 'none';
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        el.style.transition = 'opacity 0.45s ease, transform 0.45s cubic-bezier(0.34,1.2,0.64,1)';
-        el.style.opacity = '1';
-        el.style.transform = 'translateY(0)';
-      }, 60 + i * 90);
-    });
-  });
-}
-
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function initApp(user) {
   currentUser = user;
@@ -3104,7 +3097,6 @@ async function initApp(user) {
   renderAll();
   renderPrelevements();
   renderGoals();
-  animateSections();
   fetchEurUsd();
   clearInterval(_eurUsdInterval);
   _eurUsdInterval = setInterval(fetchEurUsd, 5 * 60 * 1000);
@@ -3159,14 +3151,36 @@ window.addEventListener('load', async () => {
     showLogin();
   }
 });
-let _resizeTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(_resizeTimer);
-  _resizeTimer = setTimeout(() => {
-    renderChart();
-    if (document.getElementById('tab-simulator')?.classList.contains('active')) simDrawChart();
-  }, 150);
-});
+// ─── RESIZE & RESPONSIVE ─────────────────────────────────────────────────────
+function _debouncedRedraw(fn) {
+  let t; return () => { clearTimeout(t); t = setTimeout(fn, 80); };
+}
+// ResizeObserver pour les charts — réagit aussi quand un tab devient visible
+if (window.ResizeObserver) {
+  const chartWrap = document.getElementById('chartWrap');
+  if (chartWrap) new ResizeObserver(_debouncedRedraw(renderChart)).observe(chartWrap);
+  const simWrap = document.getElementById('sim-graph-wrap');
+  if (simWrap) new ResizeObserver(_debouncedRedraw(() => { if (simData.length) simDrawChart(); })).observe(simWrap);
+} else {
+  // Fallback navigateurs anciens
+  let _resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      renderChart();
+      if (document.getElementById('tab-simulator')?.classList.contains('active')) simDrawChart();
+    }, 150);
+  });
+}
+
+// ─── DOG SCROLL HIDE (mobile) ────────────────────────────────────────────────
+window.addEventListener('scroll', () => {
+  if (window.innerWidth > 768) return;
+  const dog = document.getElementById('dogWidget');
+  if (!dog) return;
+  dog.classList.toggle('dog-hidden', window.scrollY > 80);
+}, { passive: true });
+
 // ─── ACTUALITÉS ──────────────────────────────────────────────────────────────
 let newsLoading = false;
 
@@ -3356,15 +3370,6 @@ function simComputeForRate(initial, monthly, years, rate) {
 let _simUpdateTimer = null;
 function simUpdateDebounced() {
   clearTimeout(_simUpdateTimer);
-  // Mise à jour immédiate des affichages texte (labels), render différé
-  const initial = parseFloat(document.getElementById('sim-initial').value) || 0;
-  const monthly = parseFloat(document.getElementById('sim-monthly').value) || 0;
-  const years = parseInt(document.getElementById('sim-years').value) || 1;
-  const rate = parseFloat(document.getElementById('sim-rate').value) || 0;
-  document.getElementById('sim-initial-display').textContent = simFmt(initial);
-  document.getElementById('sim-monthly-display').textContent = simFmt(monthly);
-  document.getElementById('sim-years-display').textContent = years + ' an' + (years > 1 ? 's' : '');
-  document.getElementById('sim-rate-display').textContent = simPct(rate);
   _simUpdateTimer = setTimeout(simUpdate, 80);
 }
 
@@ -3438,11 +3443,12 @@ function simUpdate() {
 function simDrawChart() {
   const svg = document.getElementById('sim-svg');
   if (!svg || !simData.length) return;
-  const W = svg.parentElement.offsetWidth || 600;
-  const H = svg.parentElement.offsetHeight || 260;
-  const pad = { top: 20, right: 20, bottom: 32, left: window.innerWidth <= 768 ? 52 : 68 };
-  svg.setAttribute('height', H);
+  const wrap = document.getElementById('sim-graph-wrap');
+  const W = (wrap ? wrap.offsetWidth : 0) || svg.parentElement.offsetWidth || 600;
+  const H = wrap ? (wrap.offsetHeight || 260) : 260;
+  const pad = { top: 20, right: 20, bottom: 32, left: 68 };
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
 
   const allVals = [...simData, ...simDataPess, ...simDataOpti].map(d => d.capital);
   const maxVal = Math.max(...allVals);
@@ -3461,10 +3467,17 @@ function simDrawChart() {
 
   // Y axis
   const yTicks = 5;
+  const simCompact = W < 400;
+  function fmtSimY(v) {
+    if (!simCompact) return simFmt(v).replace(/\s€/,'').replace(/\s/g,'\u202f');
+    if (Math.abs(v) >= 1000000) return (v/1000000).toFixed(1) + 'M';
+    if (Math.abs(v) >= 1000)    return (v/1000).toFixed(0) + 'k';
+    return Math.round(v) + '';
+  }
   const yLabels = Array.from({length: yTicks}, (_, i) => {
     const v = minVal + (range * i / (yTicks - 1));
     const y = yScale(v);
-    return `<text x="${pad.left - 8}" y="${y + 4}" font-size="10" fill="#5a6478" text-anchor="end" font-family="Inter,sans-serif">${simFmt(v).replace(/\s€/,'').replace(/\s/g,'\u202f')}</text>
+    return `<text x="${pad.left - 8}" y="${y + 4}" font-size="10" fill="#5a6478" text-anchor="end" font-family="Inter,sans-serif">${fmtSimY(v)}</text>
     <line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" stroke="#1e2530" stroke-width="1" stroke-dasharray="3,4"/>`;
   }).join('');
 
@@ -3553,5 +3566,6 @@ function simDrawTable() {
 
 </script>
 
+</div><!-- end .app -->
 </body>
 </html>
