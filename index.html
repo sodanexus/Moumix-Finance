@@ -537,9 +537,23 @@
     #sim-res-total-real { font-size: 1rem !important; }
     #sim-res-total-pess, #sim-res-total-opti { font-size: 0.95rem !important; }
 
-    /* ── Graphique simulateur : hauteur réduite ── */
-    #sim-graph-wrap { height: 200px !important; }
-    #sim-svg { height: 200px !important; }
+    /* ── Graphique simulateur : header en colonne + plus de hauteur ── */
+    #tab-simulator .card-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    #tab-simulator .card-header > div:last-child {
+      width: 100%;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: nowrap;
+      gap: 8px;
+    }
+    #tab-simulator .card-header div[style*="gap:12px"] { gap: 8px !important; }
+    #sim-graph-wrap { height: 220px !important; }
+    #sim-svg { height: 220px !important; }
 
     /* ── Chart évolution patrimoine ── */
     .chart-card .card-header {
@@ -3425,8 +3439,9 @@ function simDrawChart() {
   const svg = document.getElementById('sim-svg');
   if (!svg || !simData.length) return;
   const W = svg.parentElement.offsetWidth || 600;
-  const H = 260;
-  const pad = { top: 20, right: 20, bottom: 32, left: 68 };
+  const H = svg.parentElement.offsetHeight || 260;
+  const pad = { top: 20, right: 20, bottom: 32, left: window.innerWidth <= 768 ? 52 : 68 };
+  svg.setAttribute('height', H);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
   const allVals = [...simData, ...simDataPess, ...simDataOpti].map(d => d.capital);
