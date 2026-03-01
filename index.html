@@ -1229,6 +1229,7 @@ let transactions = [];
 let selectedTicker = null;
 let searchTimeout = null;
 let suggestionsIndex = -1;
+let tickerSearchSeq = 0;
 let currentChartPeriod = '1S';
 let _eurUsdInterval = null;
 let _priceRefreshInterval = null;
@@ -1360,18 +1361,17 @@ async function loadAllData() {
   const uid = currentUser.id;
 
   // Timeout de sécurité — si Supabase ne répond pas en 8s on abandonne
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
-
+  const timeoutMs = 8000;
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs));
   const [accRes, posRes, prelRes, txRes, histRes, goalsRes] = await Promise.race([
-    Promise.all([
-      sb.from('accounts').select('*').eq('user_id', uid).order('created_at'),
+    Promise.all([sb.from('accounts').select('*').eq('user_id', uid).order('created_at'),
       sb.from('positions').select('*').eq('user_id', uid).order('created_at'),
       sb.from('prelevements').select('*').eq('user_id', uid).order('created_at'),
       sb.from('transactions').select('*').eq('user_id', uid).order('ts', { ascending: false }),
       sb.from('patrimoine_history').select('*').eq('user_id', uid).order('date'),
       sb.from('goals').select('*').eq('user_id', uid).order('created_at'),
     ]),
-    timeout.then(() => { throw new Error('timeout'); })
+    timeout
   ]);
 
   // Si une requête retourne une erreur d'auth → forcer logout
@@ -1416,6 +1416,7 @@ async function saveAccounts() {
     })));
     if (error) { showToast('⚠️ Erreur sauvegarde comptes'); console.error(error); return false; }
   }
+  // Sync deletions: remove from DB any account not in local state (works even when accounts=[])
   const { data: dbAccounts } = await sb.from('accounts').select('id').eq('user_id', uid);
   if (dbAccounts) {
     const localIds = new Set(accounts.map(a => a.id));
@@ -1566,7 +1567,7 @@ async function fetchHistory(symbol) {
   } catch(e) { return null; }
 }
 
-async function searchTickers(query) {
+async function searchTickers(query, seq) {
   try {
     const data = await yfFetch(`/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=7&newsCount=0&listsCount=0`);
     const quotes = data?.quotes || data?.finance?.result?.[0]?.quotes || [];
@@ -1598,9 +1599,9 @@ async function searchTickers(query) {
         }
       } catch(e) {}
     })).then(() => {
-      // Re-render suggestions avec les prix mis à jour
+      // Re-render suggestions avec les prix mis à jour — uniquement si la requête est toujours la dernière
       const currentInput = document.getElementById('pos-ticker-input').value;
-      if (currentInput.length >= 2) renderSuggestions(results);
+      if (seq === tickerSearchSeq && currentInput === query) renderSuggestions(results);
     });
 
     return results;
@@ -1620,15 +1621,22 @@ function onTickerInput(val) {
     return;
   }
   showSearchStatus('Recherche en cours…');
+
+  // Empêche les réponses "en retard" d'écraser les résultats plus récents
+  const seq = ++tickerSearchSeq;
+  const query = val;
+
   searchTimeout = setTimeout(async () => {
     try {
-      const results = await searchTickers(val);
+      const results = await searchTickers(query, seq);
+      if (seq !== tickerSearchSeq) return; // une nouvelle recherche a été lancée
       if (!results || results.length === 0) {
         showSearchStatus('Aucun résultat trouvé');
         return;
       }
       renderSuggestions(results);
     } catch(e) {
+      if (seq !== tickerSearchSeq) return;
       showSearchStatus('Erreur de recherche');
     }
   }, 600);
@@ -2332,8 +2340,6 @@ function showToast(msg, type = 'error') {
   toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
 }
 
-// ─── EXPOSE GLOBALS ──────────────────────────────────────────────────────────
-
 // ─── OBJECTIFS D'ÉPARGNE ─────────────────────────────────────────────────────
 let goals = [];
 let selectedGoalEmoji = '🏠';
@@ -2591,22 +2597,23 @@ function buildInterpolatedSeries(data, startDate, endDate) {
   if (augmented.length === 0) return [];
 
   // Build full daily series by interpolating between real points
+  // Use integer timestamps at noon UTC to avoid DST/timezone boundary issues
   const result = [];
-  const start = new Date((startDate || augmented[0].date) + 'T12:00:00');
-  const end = new Date((endDate || today) + 'T12:00:00');
+  const startMs = new Date((startDate || augmented[0].date) + 'T12:00:00Z').getTime();
+  const endMs   = new Date((endDate   || today)             + 'T12:00:00Z').getTime();
+  const DAY_MS  = 86400000;
 
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const ds = d.toISOString().slice(0,10);
+  for (let ms = startMs; ms <= endMs; ms += DAY_MS) {
+    const ds = new Date(ms).toISOString().slice(0, 10);
     const real = augmented.find(p => p.date === ds);
     if (real) { result.push({ date: ds, value: real.value, estimated: false }); continue; }
     // Find surrounding real points
     const before = [...augmented].reverse().find(p => p.date < ds);
     const after = augmented.find(p => p.date > ds);
     if (before && after) {
-      const t0 = new Date(before.date + 'T12:00:00').getTime();
-      const t1 = new Date(after.date + 'T12:00:00').getTime();
-      const tc = d.getTime();
-      const ratio = (tc - t0) / (t1 - t0);
+      const t0 = new Date(before.date + 'T12:00:00Z').getTime();
+      const t1 = new Date(after.date  + 'T12:00:00Z').getTime();
+      const ratio = (ms - t0) / (t1 - t0);
       result.push({ date: ds, value: before.value + (after.value - before.value) * ratio, estimated: true });
     } else if (before) {
       result.push({ date: ds, value: before.value, estimated: true });
@@ -2657,7 +2664,9 @@ function renderChart() {
   }
 
   const hasEstimated = data.some(d => d.estimated);
-  const realCount = rawData.length + 1; // +1 for today
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todayAlreadyInRaw = rawData.some(d => d.date === todayStr);
+  const realCount = rawData.length + (todayAlreadyInRaw ? 0 : 1); // +1 for today if not already present
 
   const W = wrap.clientWidth || 800;
   const H = 200;
@@ -2876,8 +2885,9 @@ function editPrel(id) {
   const p = prelevements.find(p => p.id === id);
   if (!p) return;
   const row = document.getElementById('prel-row-' + id);
+  const safeName = p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   row.innerHTML = `
-    <input class="prel-input prel-input-name" type="text" id="prel-edit-name-${id}" value="${p.name}">
+    <input class="prel-input prel-input-name" type="text" id="prel-edit-name-${id}" value="${safeName}">
     <input class="prel-input prel-input-amount" type="number" id="prel-edit-amount-${id}" value="${p.amount}" step="any" min="0">
     <select class="prel-input prel-input-freq" id="prel-edit-freq-${id}">
       <option value="mensuel" ${p.freq==='mensuel'?'selected':''}>Mensuel</option>
@@ -3122,6 +3132,9 @@ sb.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_IN' && currentUser === null) {
     // Vient d'un vrai login (pas un refresh)
     initApp(session.user);
+  } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+    // Mise à jour silencieuse du token — on met à jour currentUser sans re-init
+    currentUser = session.user;
   } else if (event === 'SIGNED_OUT') {
     currentUser = null;
     accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = []; goals = [];
@@ -3273,7 +3286,7 @@ async function loadNews() {
   newsLoading = true;
 
   const feed = document.getElementById('newsFeed');
-  if (!feed) { newsLoading = false; return; }
+  if (!feed) { newsLoading = false; return; } // newsLoading reset before early-return
   feed.innerHTML = Array(4).fill(0).map((_, i) => `
     <div class="news-card" style="animation:fadeInUp 0.3s ease ${i*0.07}s both;pointer-events:none">
       <div style="flex:1;min-width:0">
@@ -3311,16 +3324,17 @@ function renderNewsFeed(items) {
   const feed = document.getElementById('newsFeed');
   if (!feed) return;
   if (!items.length) { feed.innerHTML = '<div class="empty-state">Aucune actualité trouvée.</div>'; return; }
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   feed.innerHTML = items.map((item, i) => `
-    <a class="news-card" href="${item.link}" target="_blank" rel="noopener"
+    <a class="news-card" href="${esc(item.link)}" target="_blank" rel="noopener"
        style="animation:fadeInUp 0.3s ease ${i * 0.05}s both;text-decoration:none;color:inherit">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-          <span class="news-source-badge">${item.source}</span>
-          ${item.ago ? `<span style="font-size:0.62rem;color:var(--muted)">${item.ago}</span>` : ''}
+          <span class="news-source-badge">${esc(item.source)}</span>
+          ${item.ago ? `<span style="font-size:0.62rem;color:var(--muted)">${esc(item.ago)}</span>` : ''}
         </div>
-        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.88rem;line-height:1.4;margin-bottom:5px;color:var(--text)">${item.title}</div>
-        ${item.desc ? `<div style="font-size:0.74rem;color:var(--muted);line-height:1.5">${item.desc}…</div>` : ''}
+        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.88rem;line-height:1.4;margin-bottom:5px;color:var(--text)">${esc(item.title)}</div>
+        ${item.desc ? `<div style="font-size:0.74rem;color:var(--muted);line-height:1.5">${esc(item.desc)}…</div>` : ''}
       </div>
       <div style="flex-shrink:0;color:var(--muted);font-size:0.8rem;align-self:center">→</div>
     </a>`).join('');
@@ -3533,8 +3547,16 @@ function simTooltip3(e, year, pess, real, opti, invested) {
     <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;display:flex;gap:10px;align-items:center;justify-content:space-between"><span class="flex-gap5"><span style="width:7px;height:7px;border-radius:2px;background:#0070f3;display:inline-block"></span><span style="color:var(--muted)">Investi</span></span><b>${simFmt(invested)}</b></div>
   `;
   tt.style.opacity = '1';
-  tt.style.left = relX + 'px';
-  tt.style.top = (relY - 8) + 'px';
+  // Force layout so offsetWidth/offsetHeight are accurate before clamping
+  // (avoids incorrect 0-values on first display)
+  const ttW = tt.offsetWidth || 160;
+  const ttH = tt.offsetHeight || 100;
+  const svgEl2 = document.getElementById('sim-svg');
+  const svgRect2 = svgEl2.getBoundingClientRect();
+  const maxX = svgRect2.width - ttW - 4;
+  const maxY = svgRect2.height - ttH - 4;
+  tt.style.left = Math.min(Math.max(relX, 4), maxX) + 'px';
+  tt.style.top  = Math.min(Math.max(relY - ttH - 8, 4), maxY) + 'px';
 }
 
 function simDrawTable() {
