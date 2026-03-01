@@ -77,7 +77,7 @@ auth.users
 - Authentification par email/mot de passe via Supabase Auth
 - Row Level Security sur les 6 tables : `auth.uid() = user_id`
 - Nettoyage automatique des tokens expirés au démarrage
-- Isolation complète entre les 2 utilisateurs
+- Isolation complète entre les utilisateurs
 - Timeout + retry sur le chargement des données
 
 ---
