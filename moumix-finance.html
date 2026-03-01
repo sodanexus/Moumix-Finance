@@ -45,7 +45,6 @@
   .card:hover { border-color: rgba(0,229,160,0.3); }
   .card-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
   .card-title { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 0.9rem; }
-  .card-badge { font-size: 0.65rem; padding: 3px 8px; border-radius: 20px; background: rgba(0,229,160,0.1); color: var(--accent); border: 1px solid rgba(0,229,160,0.2); text-transform: uppercase; letter-spacing: 0.08em; }
   .card-body { padding: 16px 20px; }
   .positions-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
@@ -56,11 +55,6 @@
   .ticker-sym { font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:0.85rem; }
   .ticker-name { font-size: 0.65rem; color: var(--muted); margin-top: 1px; }
   .price-cell { font-weight: 500; }
-  .alloc-row { margin-bottom: 10px; }
-  .alloc-label { display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.75rem; }
-  .alloc-name { color: var(--text); } .alloc-pct { color: var(--muted); }
-  .alloc-bar-wrap { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
-  .alloc-bar { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
   .accounts-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:10px; margin-bottom:24px; }
   .account-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; transition: all 0.2s; cursor: pointer; position: relative; }
   .account-card:hover { border-color: rgba(0,229,160,0.4); transform: translateY(-1px); }
@@ -173,9 +167,18 @@
   .btn-buy-active { background: var(--accent) !important; color: #000 !important; border-color: var(--accent) !important; }
   .prel-input { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:6px 10px; color:var(--text); font-family:'DM Mono',monospace; font-size:0.78rem; outline:none; transition:border-color 0.2s; }
   .prel-input:focus { border-color:var(--accent); }
+  .prel-edit-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 0; }
   .prel-input-name { flex:1; min-width:120px; }
   .prel-input-amount { width:90px; }
   .prel-input-freq { width:110px; }
+  .prel-split-input { width:56px; }
+  .prel-share-badge {
+    display:inline-flex; align-items:center; gap:3px;
+    font-size:0.6rem; padding:2px 6px; border-radius:4px;
+    background:rgba(194,122,255,0.12); color:#c27aff;
+    border:1px solid rgba(194,122,255,0.25); white-space:nowrap;
+  }
+  .prel-my-part { font-size:0.64rem; color:var(--accent); margin-top:2px; font-family:'DM Mono',monospace; }
 
   /* ─── LOGIN SCREEN ─── */
   .login-screen {
@@ -211,14 +214,6 @@
   .user-dropdown-item:hover { background: rgba(255,255,255,0.05); }
   .user-dropdown-item.danger { color: var(--loss); }
   .user-email { padding: 10px 14px; font-size: 0.7rem; color: var(--muted); border-bottom: 1px solid var(--border); }
-
-  .news-topic-btn {
-    font-family:'Inter',sans-serif; font-size:0.72rem; padding:5px 12px;
-    border-radius:20px; border:1px solid var(--border); background:var(--surface2);
-    color:var(--muted); cursor:pointer; transition:all 0.2s; letter-spacing:0.02em;
-  }
-  .news-topic-btn:hover { border-color:var(--accent); color:var(--accent); }
-  .news-topic-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(0,229,160,0.08); }
 
   .news-card {
     background:var(--surface); border:1px solid var(--border); border-radius:12px;
@@ -261,7 +256,6 @@
   /* ANIMATIONS GLOBALES */
   @keyframes fadeInUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
   @keyframes fadeInScale { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
-  @keyframes wagTail { 0%,100%{transform:rotate(0deg) translateX(0)} 25%{transform:rotate(25deg) translateX(2px)} 75%{transform:rotate(-25deg) translateX(-2px)} }
   @keyframes dogBounceIn { 0%{opacity:0;transform:translateY(60px) scale(0.5)} 60%{transform:translateY(-8px) scale(1.08)} 80%{transform:translateY(4px) scale(0.97)} 100%{opacity:1;transform:translateY(0) scale(1)} }
   @keyframes bubbleFadeIn { from{opacity:0;transform:translateY(8px) scale(0.95)} to{opacity:1;transform:translateY(0) scale(1)} }
   @keyframes bubbleFadeOut { from{opacity:1;transform:scale(1)} to{opacity:0;transform:scale(0.9) translateY(4px)} }
@@ -271,16 +265,11 @@
   @keyframes wafFade { to{opacity:0;transform:translate(-50%,-120%) scale(0.8)} }
 
   /* ─── ANIMATIONS ENRICHIES ─── */
-  @keyframes fadeInUp    { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes fadeInScale { from{opacity:0;transform:scale(0.94)}      to{opacity:1;transform:scale(1)} }
-  @keyframes fadeInLeft  { from{opacity:0;transform:translateX(-14px)} to{opacity:1;transform:translateX(0)} }
   @keyframes shimmer     { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
-  @keyframes barGrow     { from{width:0 !important} to{} }
   @keyframes countUp     { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
   @keyframes tabSlideIn  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
   @keyframes rowIn       { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
   @keyframes pulse2      { 0%,100%{box-shadow:0 0 0 0 rgba(0,229,160,0.3)} 50%{box-shadow:0 0 0 6px rgba(0,229,160,0)} }
-  @keyframes skeletonPulse { 0%,100%{opacity:0.4} 50%{opacity:0.9} }
   @keyframes ripple      { 0%{transform:scale(0);opacity:0.5} 100%{transform:scale(4);opacity:0} }
   @keyframes popIn       { 0%{opacity:0;transform:scale(0.7)} 70%{transform:scale(1.08)} 100%{opacity:1;transform:scale(1)} }
   @keyframes slideInRight{ from{opacity:0;transform:translateX(18px)} to{opacity:1;transform:translateX(0)} }
@@ -319,7 +308,6 @@
   .account-card:hover     { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
   .total-value            { transition: all 0.5s cubic-bezier(0.34,1.2,0.64,1); }
   .stat-val               { transition: color 0.3s; }
-  .alloc-bar              { animation: barGrow 0.8s cubic-bezier(0.34,1.2,0.64,1) both; }
   .btn                    { transition: all 0.18s cubic-bezier(0.34,1.4,0.64,1); }
   .btn:hover:not(:disabled){ transform: translateY(-1px); }
   .btn:active:not(:disabled){ transform: translateY(0) scale(0.97); }
@@ -357,8 +345,6 @@
   .dog-svg-wrap { animation:dogBounceIn 0.7s cubic-bezier(0.34,1.2,0.64,1) both; animation-delay:0.1s; }
   .dog-svg-wrap.idle { animation:dogIdle 2.8s ease-in-out infinite; }
   .dog-svg-wrap.shaking { animation:dogShake 0.5s ease; }
-  .dog-tail { transform-origin:2px 8px; animation:wagTail 0.5s ease-in-out infinite; }
-  .dog-tail.fast { animation-duration:0.25s; }
   .waf-bubble { position:fixed; bottom:120px; right:24px; background:var(--accent); color:#000; font-weight:700; font-size:0.72rem; padding:6px 12px; border-radius:12px; animation:wafPop 0.3s cubic-bezier(0.34,1.4,0.64,1) forwards; pointer-events:none; white-space:normal; max-width:220px; text-align:center; }
   .waf-bubble.fade { animation:wafFade 0.3s ease forwards; }
 
@@ -405,7 +391,7 @@
     position:absolute; pointer-events:none; opacity:0; transition:opacity 0.1s;
     background:var(--surface2); border:1px solid var(--border); border-radius:8px;
     padding:8px 12px; font-size:0.75rem; white-space:nowrap; z-index:10;
-    transform:translate(-50%, -100%); margin-top:-8px;
+    transform:translateX(-50%);
   }
   .chart-tooltip .tt-date { color:var(--muted); font-size:0.65rem; margin-bottom:3px; }
   .chart-tooltip .tt-val { font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:0.95rem; }
@@ -572,7 +558,7 @@
         <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.3rem;letter-spacing:-0.02em;margin-bottom:4px">Actualités financières</div>
         <div style="font-size:0.78rem;color:var(--muted)">Les dernières nouvelles des marchés en temps réel.</div>
       </div>
-      <button class="btn btn-sm" onclick="loadNews('general')" id="newsRefreshBtn">↻ Actualiser</button>
+      <button class="btn btn-sm" onclick="loadNews()" id="newsRefreshBtn">↻ Actualiser</button>
     </div>
 
     <!-- Indices rapides -->
@@ -641,6 +627,7 @@
           <option value="abonnement">Abonnement</option>
           <option value="autre">Autre</option>
         </select>
+        <input class="prel-input prel-split-input" type="number" id="prel-new-split" placeholder="÷" min="1" max="99" step="1" title="Partagé avec X personnes au total (ex: 2 = divisé par 2)">
         <button class="btn btn-sm btn-primary" onclick="confirmAddPrel()">✓ Ajouter</button>
         <button class="btn btn-sm" onclick="cancelAddPrel()">Annuler</button>
       </div>
@@ -677,7 +664,7 @@
                 <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted)">Capital initial</span>
                 <span style="font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--accent)" id="sim-initial-display">10 000 €</span>
               </label>
-              <input type="range" id="sim-initial" min="0" max="200000" step="1000" value="10000" oninput="simUpdate()" class="sim-range">
+              <input type="range" id="sim-initial" min="0" max="200000" step="1000" value="10000" oninput="simUpdateDebounced()" class="sim-range">
             </div>
 
             <div>
@@ -685,7 +672,7 @@
                 <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted)">Versement mensuel</span>
                 <span style="font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--accent)" id="sim-monthly-display">200 €</span>
               </label>
-              <input type="range" id="sim-monthly" min="0" max="5000" step="50" value="200" oninput="simUpdate()" class="sim-range">
+              <input type="range" id="sim-monthly" min="0" max="5000" step="50" value="200" oninput="simUpdateDebounced()" class="sim-range">
             </div>
 
             <div>
@@ -693,7 +680,7 @@
                 <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted)">Durée</span>
                 <span style="font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--accent)" id="sim-years-display">20 ans</span>
               </label>
-              <input type="range" id="sim-years" min="1" max="50" step="1" value="20" oninput="simUpdate()" class="sim-range">
+              <input type="range" id="sim-years" min="1" max="50" step="1" value="20" oninput="simUpdateDebounced()" class="sim-range">
             </div>
 
             <div>
@@ -701,7 +688,7 @@
                 <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted)">Rendement annuel</span>
                 <span style="font-family:'DM Mono',monospace;font-size:0.82rem;color:var(--accent)" id="sim-rate-display">7,0 %</span>
               </label>
-              <input type="range" id="sim-rate" min="0" max="20" step="0.5" value="7" oninput="simUpdate()" class="sim-range">
+              <input type="range" id="sim-rate" min="0" max="20" step="0.5" value="7" oninput="simUpdateDebounced()" class="sim-range">
             </div>
 
             <!-- Presets taux -->
@@ -727,14 +714,18 @@
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border-radius:10px;overflow:hidden">
 
                 <!-- Pessimiste -->
-                <div style="background:var(--surface2);padding:14px 12px;text-align:center">
-                  <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:#ff7070;margin-bottom:4px">Pessimiste</div>
+                <div style="background:var(--surface2);padding:14px 12px;text-align:center;display:flex;flex-direction:column">
+                  <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:#ff7070;margin-bottom:4px;margin-top:6px">Pessimiste</div>
                   <div id="sim-rate-pess" style="font-size:0.68rem;color:var(--muted);margin-bottom:10px">4,0%</div>
                   <div id="sim-res-total-pess" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:4px">—</div>
                   <div id="sim-res-interest-pess" style="font-size:0.7rem;color:#ff7070">—</div>
                   <div style="border-top:1px solid var(--border);margin:10px 0"></div>
                   <div style="font-size:0.6rem;color:var(--muted);margin-bottom:3px">Revenu passif</div>
-                  <div id="sim-res-passive-pess" style="font-size:0.78rem;font-weight:600;color:var(--muted)">—</div>
+                  <div id="sim-res-passive-pess" style="font-size:0.78rem;font-weight:600;color:#ff7070">—</div>
+                  <div style="margin-top:6px">
+                    <div style="font-size:0.6rem;color:var(--muted);margin-bottom:2px">Multiplicateur</div>
+                    <div id="sim-res-mult-pess" style="font-size:0.72rem;font-weight:600;color:var(--muted)">—</div>
+                  </div>
                 </div>
 
                 <!-- Réaliste -->
@@ -747,17 +738,25 @@
                   <div style="border-top:1px solid var(--border);margin:10px 0"></div>
                   <div style="font-size:0.6rem;color:var(--muted);margin-bottom:3px">Revenu passif</div>
                   <div id="sim-res-passive-real" style="font-size:0.78rem;font-weight:600;color:#c27aff">—</div>
+                  <div style="margin-top:6px">
+                    <div style="font-size:0.6rem;color:var(--muted);margin-bottom:2px">Multiplicateur</div>
+                    <div id="sim-res-mult-real" style="font-size:0.72rem;font-weight:600;color:var(--accent)">—</div>
+                  </div>
                 </div>
 
                 <!-- Optimiste -->
-                <div style="background:var(--surface2);padding:14px 12px;text-align:center">
-                  <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gain);margin-bottom:4px">Optimiste</div>
+                <div style="background:var(--surface2);padding:14px 12px;text-align:center;display:flex;flex-direction:column">
+                  <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gain);margin-bottom:4px;margin-top:6px">Optimiste</div>
                   <div id="sim-rate-opti" style="font-size:0.68rem;color:var(--muted);margin-bottom:10px">10,0%</div>
                   <div id="sim-res-total-opti" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1.1rem;color:var(--gain);margin-bottom:4px">—</div>
                   <div id="sim-res-interest-opti" style="font-size:0.7rem;color:var(--gain)">—</div>
                   <div style="border-top:1px solid var(--border);margin:10px 0"></div>
                   <div style="font-size:0.6rem;color:var(--muted);margin-bottom:3px">Revenu passif</div>
                   <div id="sim-res-passive-opti" style="font-size:0.78rem;font-weight:600;color:var(--gain)">—</div>
+                  <div style="margin-top:6px">
+                    <div style="font-size:0.6rem;color:var(--muted);margin-bottom:2px">Multiplicateur</div>
+                    <div id="sim-res-mult-opti" style="font-size:0.72rem;font-weight:600;color:var(--gain)">—</div>
+                  </div>
                 </div>
 
               </div>
@@ -803,7 +802,7 @@
         <div class="card-body">
           <div id="sim-graph-wrap" style="position:relative;width:100%;height:260px">
             <svg id="sim-svg" width="100%" height="260" style="display:block;overflow:visible"></svg>
-            <div id="sim-tooltip" style="position:absolute;pointer-events:none;opacity:0;transition:opacity 0.1s;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:0.75rem;white-space:nowrap;z-index:10;transform:translate(-50%,-100%);margin-top:-8px">
+            <div id="sim-tooltip" style="position:absolute;pointer-events:none;opacity:0;transition:opacity 0.1s;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:0.75rem;white-space:nowrap;z-index:10">
               <div style="color:var(--muted);font-size:0.65rem;margin-bottom:6px" id="sim-tt-year"></div>
               <div style="display:flex;flex-direction:column;gap:4px" id="sim-tt-body"></div>
             </div>
@@ -835,7 +834,7 @@
           <button class="btn btn-sm btn-primary" onclick="openAddGoal()">+ Objectif</button>
         </div>
         <div id="goalsList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
-          <div class="empty-state" id="goalsEmpty">Aucun objectif — cliquez sur "+ Objectif"</div>
+          <div class="empty-state">Aucun objectif — cliquez sur "+ Objectif"</div>
         </div>
       </div>
 
@@ -1022,6 +1021,8 @@ let selectedTicker = null;
 let searchTimeout = null;
 let suggestionsIndex = -1;
 let currentChartPeriod = '1S';
+let _eurUsdInterval = null;
+let _priceRefreshInterval = null;
 const ALLOC_COLORS = ['#00e5a0','#0070f3','#ffb400','#ff4466','#c27aff','#00cfff','#ff9a3c'];
 
 // ─── ONGLETS ─────────────────────────────────────────────────────────────────
@@ -1045,8 +1046,8 @@ function switchTab(name, btn) {
     document.getElementById('tab-' + name).classList.add('active');
     if (btn) btn.classList.add('active');
     if (name === 'details') { renderAccounts(); renderPositions(); renderPrelevements(); }
-    if (name === 'simulator') { simDrawChart(); renderGoals(); }
-    if (name === 'news') { loadNews('general'); loadNewsIndices(); }
+    if (name === 'simulator') { simUpdate(); renderGoals(); }
+    if (name === 'news') { loadNews(); loadNewsIndices(); }
   }, current ? 120 : 0);
 }
 window.switchTab = switchTab;
@@ -1185,7 +1186,8 @@ async function loadAllData() {
     changePercent: p.change_percent, lastUpdated: p.last_updated
   }));
   prelevements = (prelRes.data || []).map(p => ({
-    id: p.id, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat
+    id: p.id, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat,
+    split: p.split || 1
   }));
   transactions = (txRes.data || []).map(t => ({
     id: t.id, type: t.type, symbol: t.symbol, name: t.name,
@@ -1246,7 +1248,8 @@ async function savePrelevements() {
   const uid = currentUser.id;
   if (prelevements.length > 0) {
     const { error } = await sb.from('prelevements').upsert(prelevements.map(p => ({
-      id: p.id, user_id: uid, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat
+      id: p.id, user_id: uid, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat,
+      split: p.split || 1
     })));
     if (error) { showToast('⚠️ Erreur sauvegarde prélèvements'); console.error(error); return; }
   }
@@ -1317,7 +1320,7 @@ async function fetchEurRate(currency) {
   if (currency === 'EUR') return 1;
   if (eurRates[currency]) return eurRates[currency];
   try {
-    const d = await yfFetch(`/v8/finance/chart/${currency}EUR=X?interval=1d&range=1d`);
+    const d = await yfFetch(`/v8/finance/chart/EUR${currency}=X?interval=1d&range=1d`);
     const rate = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
     if (rate) { eurRates[currency] = rate; return rate; }
   } catch(e) {}
@@ -1439,13 +1442,16 @@ function hideSuggestions() {
 function renderSuggestions(results) {
   const el = document.getElementById('tickerSuggestions');
   el.style.display = 'block';
+  // Stocker dans une variable JS pour éviter l'encodage JSON dans les attributs HTML
+  window._tickerSuggestions = results;
   el.innerHTML = results.map((r, i) => {
     const priceStr = r.priceEur != null ? fmtEur(r.priceEur) : (r.price != null ? `${fmt(r.price)} ${r.currency}` : '—');
-    const encoded = encodeURIComponent(JSON.stringify(r));
-    return `<div class="ticker-suggestion" data-index="${i}" data-ticker="${encoded}" onclick="selectTicker(decodeURIComponent(this.dataset.ticker))">
+    const safeSym = r.symbol.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const safeName = r.name.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return `<div class="ticker-suggestion" data-index="${i}" onclick="selectTickerByIndex(${i})">
       <div class="sug-left">
-        <div class="sug-sym">${r.symbol}</div>
-        <div class="sug-name">${r.name}</div>
+        <div class="sug-sym">${safeSym}</div>
+        <div class="sug-name">${safeName}</div>
       </div>
       <div class="sug-right">
         <div class="sug-price">${priceStr}</div>
@@ -1460,7 +1466,7 @@ function onTickerKeydown(e) {
   const items = el.querySelectorAll('.ticker-suggestion');
   if (e.key === 'ArrowDown') { suggestionsIndex = Math.min(suggestionsIndex+1, items.length-1); highlightSuggestion(items); e.preventDefault(); }
   else if (e.key === 'ArrowUp') { suggestionsIndex = Math.max(suggestionsIndex-1, 0); highlightSuggestion(items); e.preventDefault(); }
-  else if (e.key === 'Enter' && suggestionsIndex >= 0) { items[suggestionsIndex].click(); e.preventDefault(); }
+  else if (e.key === 'Enter' && suggestionsIndex >= 0) { selectTickerByIndex(suggestionsIndex); e.preventDefault(); }
   else if (e.key === 'Escape') { hideSuggestions(); }
 }
 
@@ -1469,8 +1475,13 @@ function highlightSuggestion(items) {
   if (items[suggestionsIndex]) items[suggestionsIndex].scrollIntoView({block:'nearest'});
 }
 
-function selectTicker(jsonStr) {
-  const r = JSON.parse(jsonStr);
+function selectTickerByIndex(i) {
+  const r = (window._tickerSuggestions || [])[i];
+  if (r) selectTicker(r);
+}
+window.selectTickerByIndex = selectTickerByIndex;
+
+function selectTicker(r) {
   selectedTicker = r;
   hideSuggestions();
   document.getElementById('pos-ticker-input').value = `${r.symbol} — ${r.name}`;
@@ -1601,6 +1612,7 @@ async function addAccount() {
   const type = document.getElementById('acc-type').value;
   if (!name) return alert('Veuillez saisir un nom');
   const solde = type === 'Livret' || type === 'Immo' || type === 'Autre' ? (parseFloat(document.getElementById('acc-solde').value) || 0) : null;
+  if (solde !== null && solde < 0) return alert('Le solde ne peut pas être négatif');
   accounts.push({ id: crypto.randomUUID(), name, type, solde });
   await saveAccounts();
   closeModal('account');
@@ -1663,12 +1675,22 @@ async function confirmPosition() {
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 async function deletePosition(id) {
+  const p = positions.find(p => p.id === id);
+  if (!p) return;
+  if (!confirm(`Supprimer la position ${p.symbol} (${p.qty} titre${p.qty > 1 ? 's' : ''}) ?`)) return;
   await deletePositionDB(id);
   delete positionHistory[id];
   positions = positions.filter(p => p.id !== id);
   renderAll();
 }
 async function deleteAccount(id) {
+  const a = accounts.find(a => a.id === id);
+  if (!a) return;
+  const posCount = positions.filter(p => p.accountId === id).length;
+  const msg = posCount > 0
+    ? `Supprimer le compte "${a.name}" et ses ${posCount} position${posCount > 1 ? 's' : ''} ?`
+    : `Supprimer le compte "${a.name}" ?`;
+  if (!confirm(msg)) return;
   // Supprimer d'abord les positions associées à ce compte
   const orphanPositions = positions.filter(p => p.accountId === id);
   for (const p of orphanPositions) {
@@ -1693,7 +1715,9 @@ async function confirmLivretSolde(id) {
   const input = document.getElementById('livret-input-' + id);
   const a = accounts.find(a => a.id === id);
   if (a) {
-    a.solde = parseFloat(input.value) || 0;
+    const newSolde = parseFloat(input.value);
+    if (newSolde < 0) { showToast('Le solde ne peut pas être négatif', 'error'); return; }
+    a.solde = newSolde || 0;
     await saveAccounts();
     snapshotPatrimoine();
     const el = document.getElementById('livret-total-' + id);
@@ -1736,7 +1760,7 @@ async function refreshAllPrices() {
     await savePositions();
     snapshotPatrimoine();
     const now = new Date();
-    if (badge) badge.textContent = `Actualisé à ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+    if (badge) badge.textContent = `Actualisé à ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     renderAll();
 
     // Historiques réels en arrière-plan
@@ -1874,11 +1898,12 @@ function timeAgo(ts) {
 
 function renderAllocation() {
   const el=document.getElementById('allocContent');
-  if (positions.length===0 && accounts.filter(a=>a.type==='Livret'||a.type==='Immo').every(a=>!a.solde)) {
+  if (positions.length===0 && accounts.filter(a=>a.type==='Livret'||a.type==='Immo'||a.type==='Autre').every(a=>!a.solde)) {
     el.innerHTML='<div class="empty-state">Ajoutez des positions</div>'; return;
   }
-  const livretTotalAlloc=accounts.filter(a=>a.type==='Livret').reduce((s,a)=>s+(a.solde||0),0);
-  const total=positions.reduce((s,p)=>s+p.current*p.qty,0)+livretTotalAlloc;
+  const fixedTypesAlloc = ['Livret','Immo','Autre'];
+  const fixedTotalAlloc=accounts.filter(a=>fixedTypesAlloc.includes(a.type)).reduce((s,a)=>s+(a.solde||0),0);
+  const total=positions.reduce((s,p)=>s+p.current*p.qty,0)+fixedTotalAlloc;
   if (total <= 0) { el.innerHTML='<div class="empty-state">Aucune valeur calculable</div>'; return; }
 
   // Grouper les positions par symbole
@@ -1889,8 +1914,8 @@ function renderAllocation() {
     const accType = getAccountType(p.accountId);
     if (accType) map[p.symbol].accountTypes.add(accType);
   });
-  accounts.filter(a=>(a.type==='Livret'||a.type==='Immo') && a.solde>0).forEach(a=>{
-    const key='Livret:'+a.id;
+  accounts.filter(a=>(a.type==='Livret'||a.type==='Immo'||a.type==='Autre') && a.solde>0).forEach(a=>{
+    const key=a.type+':'+a.id;
     map[key]={val:a.solde, name:a.name, accountTypes: new Set([a.type])};
   });
   const sorted=Object.entries(map).sort((a,b)=>b[1].val-a[1].val);
@@ -1904,7 +1929,7 @@ function renderAllocation() {
 
   // ── Liste items ──
   const listItems=coloredSlices.slice(0,10).map(s=>{
-    const isLivret=s.sym.startsWith('Livret:');
+    const isLivret=s.sym.startsWith('Livret:')||s.sym.startsWith('Immo:')||s.sym.startsWith('Autre:');
     const label=isLivret?s.d.name:s.sym;
     const sub=isLivret?'':(s.d.name||'');
     const typeTags=[...s.d.accountTypes].map(t=>`<span class="tag ${tagClass(t)}" style="font-size:0.52rem;padding:1px 4px">${t}</span>`).join('');
@@ -2100,6 +2125,7 @@ window.confirmAddPrel = confirmAddPrel;
 window.deletePrel = deletePrel;
 window.editPrel = editPrel;
 window.confirmEditPrel = confirmEditPrel;
+window.renderPrelevements = renderPrelevements;
 window.onTickerInput = onTickerInput;
 window.onTickerKeydown = onTickerKeydown;
 window.selectTicker = selectTicker;
@@ -2157,7 +2183,8 @@ async function saveGoal() {
   let goal;
   if (editId) {
     goal = goals.find(g => g.id === editId);
-    if (goal) { goal.name = name; goal.target = target; goal.current = current; goal.emoji = selectedGoalEmoji; }
+    if (!goal) { closeGoalModal(); return; } // objectif supprimé entre-temps
+    goal.name = name; goal.target = target; goal.current = current; goal.emoji = selectedGoalEmoji;
   } else {
     goal = { id: crypto.randomUUID(), name, target, current, emoji: selectedGoalEmoji, createdAt: Date.now() };
     goals.push(goal);
@@ -2311,14 +2338,23 @@ function renderFilterToggles() {
 }
 
 // ─── PATRIMOINE SNAPSHOT ──────────────────────────────────────────────────────
-function computeCurrentPatrimoine() {
+function computeTotalPatrimoine() {
+  // Patrimoine TOTAL, tous types confondus — utilisé pour les snapshots historiques
+  // (indépendant des filtres actifs pour assurer la cohérence de l'historique)
   const fixedTypes = ['Livret','Immo','Autre'];
   const fixed = accounts.filter(a => fixedTypes.includes(a.type)).reduce((s,a) => s+(a.solde||0), 0);
   return positions.reduce((s,p) => s + p.current * p.qty, 0) + fixed;
 }
+function computeCurrentPatrimoine() {
+  const fixedTypes = ['Livret','Immo','Autre'];
+  const activeAccounts = accounts.filter(a => isTypeActive(a.type));
+  const fixed = activeAccounts.filter(a => fixedTypes.includes(a.type)).reduce((s,a) => s+(a.solde||0), 0);
+  const activeIds = new Set(activeAccounts.map(a => a.id));
+  return positions.filter(p => activeIds.has(p.accountId)).reduce((s,p) => s + p.current * p.qty, 0) + fixed;
+}
 
 async function snapshotPatrimoine() {
-  const val = computeCurrentPatrimoine();
+  const val = computeTotalPatrimoine(); // toujours le total, pas filtré
   if (val <= 0) return;
   const today = new Date().toISOString().slice(0,10);
   const last = patrimoineHistory[patrimoineHistory.length - 1];
@@ -2555,7 +2591,7 @@ function renderChart() {
     tt.style.opacity = '1';
     const ttX = Math.min(Math.max(x, 80), W - 80);
     tt.style.left = ttX + 'px';
-    tt.style.top = (pad.top + 10) + 'px';
+    tt.style.top = (pad.top + 8) + 'px';
   });
   svg.addEventListener('mouseleave', () => {
     document.getElementById('chartTooltip').style.opacity = '0';
@@ -2622,14 +2658,17 @@ function cancelAddPrel() {
   document.getElementById('prelAddRow').style.display = 'none';
   document.getElementById('prel-new-name').value = '';
   document.getElementById('prel-new-amount').value = '';
+  document.getElementById('prel-new-split').value = '';
 }
 async function confirmAddPrel() {
   const name = document.getElementById('prel-new-name').value.trim();
   const amount = parseFloat(document.getElementById('prel-new-amount').value);
   const freq = document.getElementById('prel-new-freq').value;
   const cat = document.getElementById('prel-new-cat').value;
+  const splitRaw = parseInt(document.getElementById('prel-new-split').value);
+  const split = splitRaw >= 2 ? splitRaw : 1;
   if (!name || !amount) return alert('Nom et montant requis');
-  prelevements.push({ id: crypto.randomUUID(), name, amount, freq, cat });
+  prelevements.push({ id: crypto.randomUUID(), name, amount, freq, cat, split });
   await savePrelevements(); cancelAddPrel(); renderPrelevements();
 }
 async function deletePrel(id) {
@@ -2656,6 +2695,7 @@ function editPrel(id) {
       <option value="abonnement" ${p.cat==='abonnement'?'selected':''}>Abonnement</option>
       <option value="autre" ${p.cat==='autre'?'selected':''}>Autre</option>
     </select>
+    <input class="prel-input prel-split-input" type="number" id="prel-edit-split-${id}" value="${p.split > 1 ? p.split : ''}" placeholder="÷" min="1" max="99" step="1" title="Partagé avec X personnes au total">
     <button class="btn btn-sm btn-primary" onclick="confirmEditPrel('${id}')">✓</button>
     <button class="btn btn-sm" onclick="renderPrelevements()">✕</button>`;
   row.className = 'prel-edit-row';
@@ -2667,6 +2707,8 @@ async function confirmEditPrel(id) {
   p.amount = parseFloat(document.getElementById('prel-edit-amount-' + id).value) || 0;
   p.freq = document.getElementById('prel-edit-freq-' + id).value;
   p.cat = document.getElementById('prel-edit-cat-' + id).value;
+  const splitRaw = parseInt(document.getElementById('prel-edit-split-' + id).value);
+  p.split = splitRaw >= 2 ? splitRaw : 1;
   await savePrelevements(); renderPrelevements();
 }
 function renderPrelevements() {
@@ -2677,17 +2719,34 @@ function renderPrelevements() {
     summary.style.display = 'none'; return;
   }
   let totalMonthly = 0;
-  prelevements.forEach(p => { totalMonthly += p.amount * (FREQ_TO_MONTHLY[p.freq] || 1); });
+  prelevements.forEach(p => {
+    const split = p.split > 1 ? p.split : 1;
+    totalMonthly += (p.amount / split) * (FREQ_TO_MONTHLY[p.freq] || 1);
+  });
 
   el.innerHTML = prelevements.map(p => {
-    const monthly = p.amount * (FREQ_TO_MONTHLY[p.freq] || 1);
+    const split = p.split > 1 ? p.split : 1;
+    const myShare = p.amount / split;
+    const monthly = myShare * (FREQ_TO_MONTHLY[p.freq] || 1);
+    const shareHtml = split > 1
+      ? `<span class="prel-share-badge">👥 ÷${split}</span>`
+      : '';
+    const myPartHtml = split > 1
+      ? `<div class="prel-my-part">Ma part : ${fmtEur(myShare)}</div>`
+      : '';
     return `<div class="prel-row" id="prel-row-${p.id}">
       <div class="prel-name">
-        <div style="font-weight:500">${p.name}</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-weight:500">${p.name}</span>
+          ${shareHtml}
+        </div>
         <div style="font-size:0.68rem;color:var(--muted);margin-top:2px">${CAT_LABELS[p.cat]||p.cat}</div>
       </div>
       <span class="prel-freq">${p.freq}</span>
-      <div class="prel-amount" style="color:var(--loss)">-${fmtEur(p.amount)}</div>
+      <div class="prel-amount" style="color:${split > 1 ? 'var(--muted)' : 'var(--loss)'}">
+        -${fmtEur(p.amount)}
+        ${myPartHtml}
+      </div>
       <div style="font-size:0.68rem;color:var(--muted);min-width:70px;text-align:right">≈ ${fmtEur(monthly)}/mois</div>
       <button class="del-btn" onclick="editPrel('${p.id}')" style="color:var(--muted)" title="Modifier">✏️</button>
       <button class="del-btn" onclick="deletePrel('${p.id}')" title="Supprimer">✕</button>
@@ -2707,13 +2766,12 @@ function showDog(user) {
   const widget = document.getElementById('dogWidget');
   const bubble = document.getElementById('dogBubble');
   const svgWrap = document.getElementById('dogSvgWrap');
-  const tail = document.querySelector('.dog-tail');
 
   widget.style.display = 'flex';
   svgWrap.className = 'dog-svg-wrap'; // reset, bounce in
 
   // Calcul recap patrimoine — même logique que renderSummary (exclut livrets + price=0)
-  const total = computeCurrentPatrimoine();
+  const total = computeCurrentPatrimoine(); // respecte les filtres actifs pour l'affichage
   const positionsWithPRU = positions.filter(p => p.price > 0);
   const cost = positionsWithPRU.reduce((s,p) => s + p.price * p.qty, 0);
   const posVal = positionsWithPRU.reduce((s,p) => s + p.current * p.qty, 0);
@@ -2740,11 +2798,8 @@ function showDog(user) {
   bubble.style.display = 'block';
   bubble.className = 'dog-welcome-bubble';
 
-  // Tail wag rapide au début
-  if (tail) tail.classList.add('fast');
-  setTimeout(() => { if (tail) tail.classList.remove('fast'); }, 2000);
-
   // Bulle disparaît après 5s
+  clearTimeout(dogBubbleTimer);
   dogBubbleTimer = setTimeout(() => {
     bubble.classList.add('hiding');
     setTimeout(() => {
@@ -2832,19 +2887,6 @@ function animateSections() {
   });
 }
 
-function animateNumber(el, startVal, endVal, duration = 600, formatter = v => v.toFixed(2)) {
-  let start = null;
-  const step = ts => {
-    if (!start) start = ts;
-    const p = Math.min((ts - start) / duration, 1);
-    const ease = 1 - Math.pow(1 - p, 3);
-    el.textContent = formatter(startVal + (endVal - startVal) * ease);
-    if (p < 1) requestAnimationFrame(step);
-    else el.textContent = formatter(endVal);
-  };
-  requestAnimationFrame(step);
-}
-
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function initApp(user) {
   currentUser = user;
@@ -2880,10 +2922,12 @@ async function initApp(user) {
   renderGoals();
   animateSections();
   fetchEurUsd();
-  setInterval(fetchEurUsd, 5 * 60 * 1000);
+  clearInterval(_eurUsdInterval);
+  _eurUsdInterval = setInterval(fetchEurUsd, 5 * 60 * 1000);
   setTimeout(() => showDog(user), 400);
   if (positions.length > 0) refreshAllPrices();
-  setInterval(() => { if (positions.length > 0) refreshAllPrices(); }, 5 * 60 * 1000);
+  clearInterval(_priceRefreshInterval);
+  _priceRefreshInterval = setInterval(() => { if (positions.length > 0) refreshAllPrices(); }, 5 * 60 * 1000);
 }
 
 function showLogin() {
@@ -2916,6 +2960,7 @@ sb.auth.onAuthStateChange((event, session) => {
 window.addEventListener('load', async () => {
   // Laisse le SDK terminer _initialize / _recoverAndRefresh
   await new Promise(r => setTimeout(r, 800));
+  simUpdate(); // initialise le simulateur dès le chargement
   try {
     const { data: { session } } = await sb.auth.getSession();
     if (session?.user && !currentUser) {
@@ -2927,7 +2972,6 @@ window.addEventListener('load', async () => {
     showLogin();
   }
 });
-
 let _resizeTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(_resizeTimer);
@@ -3015,22 +3059,15 @@ async function loadNewsIndices() {
       if (!meta) return;
       const price = meta.regularMarketPrice;
       const prev  = meta.chartPreviousClose || meta.previousClose || price;
-      const chg   = ((price - prev) / prev * 100);
       const id    = 'idx-' + idx.sym.replace(/[^a-zA-Z0-9]/g,'_');
       const el2   = document.getElementById(id);
       if (el2) {
-        const prevText = el2.querySelector('span')?.textContent || '0';
-        const prevNum = parseFloat(prevText.replace(/[^\d.]/g,'')) || 0;
+        const chg = ((price - prev) / prev * 100);
         const changeHtml = `<span style="font-size:0.62rem;color:${chg>=0?'var(--gain)':'var(--loss)'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span>`;
-        el2.innerHTML = `<span style="font-size:0.75rem">…</span> ${changeHtml}`;
+        const priceStr = price > 1000 ? Math.round(price).toLocaleString('fr-FR') : price.toFixed(2);
+        el2.innerHTML = `<span style="font-size:0.75rem">${priceStr}</span> ${changeHtml}`;
         el2.classList.add('updated');
         setTimeout(() => el2.classList.remove('updated'), 400);
-        const numEl = el2.querySelector('span');
-        if (numEl && prevNum > 0) {
-          animateNumber(numEl, prevNum, price, 800, v => v > 1000 ? Math.round(v).toLocaleString('fr-FR') : v.toFixed(2));
-        } else if (numEl) {
-          numEl.textContent = price > 1000 ? Math.round(price).toLocaleString('fr-FR') : price.toFixed(2);
-        }
       }
     } catch(e) {}
   }));
@@ -3055,22 +3092,24 @@ async function loadNews() {
     </div>`).join('');
 
   let items = [];
-  for (const url of NEWS_FEEDS_FR) {
-    try {
-      items = await fetchRSS(url);
-      if (items.length > 0) break;
-    } catch(e) { continue; }
+  try {
+    for (const url of NEWS_FEEDS_FR) {
+      try {
+        items = await fetchRSS(url);
+        if (items.length > 0) break;
+      } catch(e) { continue; }
+    }
+    if (items.length > 0) {
+      renderNewsFeed(items);
+    } else {
+      feed.innerHTML = `<div class="empty-state" style="padding:48px">
+        Impossible de charger les actualités (CORS bloqué).<br>
+        <span style="font-size:0.72rem;margin-top:4px;display:block">Essayez depuis un autre réseau ou désactivez votre bloqueur de pub.</span>
+      </div>`;
+    }
+  } finally {
+    newsLoading = false;
   }
-
-  if (items.length > 0) {
-    renderNewsFeed(items);
-  } else {
-    feed.innerHTML = `<div class="empty-state" style="padding:48px">
-      Impossible de charger les actualités (CORS bloqué).<br>
-      <span style="font-size:0.72rem;margin-top:4px;display:block">Essayez depuis un autre réseau ou désactivez votre bloqueur de pub.</span>
-    </div>`;
-  }
-  newsLoading = false;
 }
 window.loadNews = loadNews;
 
@@ -3124,7 +3163,6 @@ function simComputeForRate(initial, monthly, years, rate) {
   const data = [];
   let capital = initial;
   let totalInvested = initial;
-  let prevCapital = initial;
   data.push({ year: 0, capital: initial, invested: initial, interest: 0 });
   for (let y = 1; y <= years; y++) {
     for (let m = 0; m < 12; m++) {
@@ -3133,10 +3171,25 @@ function simComputeForRate(initial, monthly, years, rate) {
     }
     const totalInterest = capital - totalInvested;
     data.push({ year: y, capital, invested: totalInvested, interest: totalInterest });
-    prevCapital = capital;
   }
   return { data, final: capital, totalInvested, totalInterest: capital - totalInvested };
 }
+
+let _simUpdateTimer = null;
+function simUpdateDebounced() {
+  clearTimeout(_simUpdateTimer);
+  // Mise à jour immédiate des affichages texte (labels), render différé
+  const initial = parseFloat(document.getElementById('sim-initial').value) || 0;
+  const monthly = parseFloat(document.getElementById('sim-monthly').value) || 0;
+  const years = parseInt(document.getElementById('sim-years').value) || 1;
+  const rate = parseFloat(document.getElementById('sim-rate').value) || 0;
+  document.getElementById('sim-initial-display').textContent = simFmt(initial);
+  document.getElementById('sim-monthly-display').textContent = simFmt(monthly);
+  document.getElementById('sim-years-display').textContent = years + ' an' + (years > 1 ? 's' : '');
+  document.getElementById('sim-rate-display').textContent = simPct(rate);
+  _simUpdateTimer = setTimeout(simUpdate, 80);
+}
+window.simUpdateDebounced = simUpdateDebounced;
 
 function simUpdate() {
   const initial = parseFloat(document.getElementById('sim-initial').value) || 0;
@@ -3169,17 +3222,26 @@ function simUpdate() {
   // Résultats pessimiste
   document.getElementById('sim-res-total-pess').textContent = simFmt(resPess.final);
   document.getElementById('sim-res-interest-pess').textContent = '+' + simFmt(resPess.totalInterest) + ' d\'intérêts';
-  document.getElementById('sim-res-passive-pess').textContent = simFmt(resPess.final * (ratePess / 100 / 12)) + '/mois';
+  const monthlyRatePess = Math.pow(1 + ratePess / 100, 1/12) - 1;
+  document.getElementById('sim-res-passive-pess').textContent = simFmt(resPess.final * monthlyRatePess) + '/mois';
+  const multPess = resPess.totalInvested > 0 ? (resPess.final / resPess.totalInvested) : 0;
+  document.getElementById('sim-res-mult-pess').textContent = multPess > 0 ? '×' + multPess.toFixed(2) + ' le capital investi' : '—';
 
   // Résultats réaliste
   document.getElementById('sim-res-total-real').textContent = simFmt(resReal.final);
   document.getElementById('sim-res-interest-real').textContent = '+' + simFmt(resReal.totalInterest) + ' d\'intérêts';
-  document.getElementById('sim-res-passive-real').textContent = simFmt(resReal.final * (rate / 100 / 12)) + '/mois';
+  const monthlyRateReal = Math.pow(1 + rate / 100, 1/12) - 1;
+  document.getElementById('sim-res-passive-real').textContent = simFmt(resReal.final * monthlyRateReal) + '/mois';
+  const multReal = resReal.totalInvested > 0 ? (resReal.final / resReal.totalInvested) : 0;
+  document.getElementById('sim-res-mult-real').textContent = multReal > 0 ? '×' + multReal.toFixed(2) + ' le capital investi' : '—';
 
   // Résultats optimiste
   document.getElementById('sim-res-total-opti').textContent = simFmt(resOpti.final);
   document.getElementById('sim-res-interest-opti').textContent = '+' + simFmt(resOpti.totalInterest) + ' d\'intérêts';
-  document.getElementById('sim-res-passive-opti').textContent = simFmt(resOpti.final * (rateOpti / 100 / 12)) + '/mois';
+  const monthlyRateOpti = Math.pow(1 + rateOpti / 100, 1/12) - 1;
+  document.getElementById('sim-res-passive-opti').textContent = simFmt(resOpti.final * monthlyRateOpti) + '/mois';
+  const multOpti = resOpti.totalInvested > 0 ? (resOpti.final / resOpti.totalInvested) : 0;
+  document.getElementById('sim-res-mult-opti').textContent = multOpti > 0 ? '×' + multOpti.toFixed(2) + ' le capital investi' : '—';
 
   // Jauge composition (réaliste)
   const { final, totalInvested, totalInterest } = resReal;
@@ -3300,6 +3362,7 @@ function simDrawTable() {
   tbody.innerHTML = simData.map((d, i) => {
     const dp = simDataPess[i];
     const do_ = simDataOpti[i];
+    if (!dp || !do_) return '';
     const highlight = d.year % 10 === 0 && d.year > 0;
     return `<tr style="background:${highlight ? 'rgba(0,229,160,0.04)' : (i%2===0?'transparent':'rgba(255,255,255,0.01)')}">
       <td style="padding:8px 12px;font-weight:${highlight?700:400}">${d.year === 0 ? 'Départ' : 'An ' + d.year}</td>
@@ -3311,7 +3374,7 @@ function simDrawTable() {
   }).join('');
 }
 
-window.addEventListener('load', () => { setTimeout(simUpdate, 100); });</script>
+</script>
 
 </body>
 </html>
