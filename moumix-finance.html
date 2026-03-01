@@ -348,7 +348,7 @@
 
   /* CHIEN */
   .dog-widget { position:fixed; bottom:24px; right:24px; z-index:300; display:flex; flex-direction:column; align-items:center; cursor:pointer; user-select:none; }
-  .dog-welcome-bubble { position:absolute; bottom:calc(100% + 12px); right:0; background:var(--surface2); border:1px solid var(--border); border-radius:14px 14px 2px 14px; padding:14px 16px; width:260px; box-shadow:0 8px 32px rgba(0,0,0,0.4); animation:bubbleFadeIn 0.4s cubic-bezier(0.34,1.2,0.64,1) both; pointer-events:none; }
+  .dog-welcome-bubble { position:fixed; bottom:160px; right:24px; background:var(--surface2); border:1px solid var(--border); border-radius:14px 14px 2px 14px; padding:14px 16px; width:280px; max-width:calc(100vw - 48px); box-shadow:0 8px 32px rgba(0,0,0,0.4); animation:bubbleFadeIn 0.4s cubic-bezier(0.34,1.2,0.64,1) both; pointer-events:none; word-wrap:break-word; }
   .dog-welcome-bubble.hiding { animation:bubbleFadeOut 0.3s ease forwards; }
   .dog-bubble-name { font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:0.95rem; margin-bottom:6px; }
   .dog-bubble-name span { color:var(--accent); }
@@ -359,7 +359,7 @@
   .dog-svg-wrap.shaking { animation:dogShake 0.5s ease; }
   .dog-tail { transform-origin:2px 8px; animation:wagTail 0.5s ease-in-out infinite; }
   .dog-tail.fast { animation-duration:0.25s; }
-  .waf-bubble { position:absolute; bottom:calc(100% + 8px); left:50%; transform:translate(-50%,-105%); background:var(--accent); color:#000; font-weight:700; font-size:0.72rem; padding:4px 10px; border-radius:12px; animation:wafPop 0.3s cubic-bezier(0.34,1.4,0.64,1) forwards; pointer-events:none; white-space:nowrap; }
+  .waf-bubble { position:fixed; bottom:120px; right:24px; background:var(--accent); color:#000; font-weight:700; font-size:0.72rem; padding:6px 12px; border-radius:12px; animation:wafPop 0.3s cubic-bezier(0.34,1.4,0.64,1) forwards; pointer-events:none; white-space:normal; max-width:220px; text-align:center; }
   .waf-bubble.fade { animation:wafFade 0.3s ease forwards; }
 
   /* ─── ONGLETS ─── */
@@ -518,9 +518,9 @@
       <div class="filter-toggles" id="filterToggles"></div>
     </div>
     <div class="total-stats">
-      <div class="stat"><div class="stat-label">P&L jour</div><div class="stat-val" id="dailyPnl">—</div></div>
-      <div class="stat"><div class="stat-label">P&L total</div><div class="stat-val" id="totalPnl">—</div></div>
-      <div class="stat"><div class="stat-label">Positions</div><div class="stat-val" id="posCount">0</div></div>
+      <div class="stat"><div class="stat-label">Capital investi</div><div class="stat-val" id="capitalInvested">—</div></div>
+      <div class="stat"><div class="stat-label">Plus-value</div><div class="stat-val" id="totalPnl">—</div></div>
+      <div class="stat"><div class="stat-label">Mise à jour</div><div class="stat-val" id="lastUpdateStat" style="font-size:0.85rem">—</div></div>
     </div>
   </div>
 
@@ -1204,13 +1204,12 @@ async function loadAllData() {
 // ─── DB SAVE ──────────────────────────────────────────────────────────────────
 async function saveAccounts() {
   const uid = currentUser.id;
-  // Upsert les comptes existants
   if (accounts.length > 0) {
-    await sb.from('accounts').upsert(accounts.map(a => ({
+    const { error } = await sb.from('accounts').upsert(accounts.map(a => ({
       id: a.id, user_id: uid, name: a.name, type: a.type, solde: a.solde ?? null
     })));
+    if (error) { showToast('⚠️ Erreur sauvegarde comptes'); console.error(error); return; }
   }
-  // Supprimer en base les comptes qui n'existent plus localement
   const { data: dbAccounts } = await sb.from('accounts').select('id').eq('user_id', uid);
   if (dbAccounts) {
     const localIds = new Set(accounts.map(a => a.id));
@@ -1224,15 +1223,15 @@ async function saveAccounts() {
 async function savePositions() {
   const uid = currentUser.id;
   if (positions.length > 0) {
-    await sb.from('positions').upsert(positions.map(p => ({
+    const { error } = await sb.from('positions').upsert(positions.map(p => ({
       id: p.id, user_id: uid, symbol: p.symbol, name: p.name,
       exchange: p.exchange || '', currency: p.currency || 'EUR',
       account_id: p.accountId, qty: p.qty, price: p.price,
       current: p.current || 0, change: p.change ?? null,
       change_percent: p.changePercent ?? null, last_updated: p.lastUpdated ?? null
     })));
+    if (error) { showToast('⚠️ Erreur sauvegarde positions'); console.error(error); return; }
   }
-  // Supprimer en base les positions qui n'existent plus localement
   const { data: dbPositions } = await sb.from('positions').select('id').eq('user_id', uid);
   if (dbPositions) {
     const localIds = new Set(positions.map(p => p.id));
@@ -1246,11 +1245,11 @@ async function savePositions() {
 async function savePrelevements() {
   const uid = currentUser.id;
   if (prelevements.length > 0) {
-    await sb.from('prelevements').upsert(prelevements.map(p => ({
+    const { error } = await sb.from('prelevements').upsert(prelevements.map(p => ({
       id: p.id, user_id: uid, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat
     })));
+    if (error) { showToast('⚠️ Erreur sauvegarde prélèvements'); console.error(error); return; }
   }
-  // Supprimer en base les prélèvements qui n'existent plus localement
   const { data: dbPrel } = await sb.from('prelevements').select('id').eq('user_id', uid);
   if (dbPrel) {
     const localIds = new Set(prelevements.map(p => p.id));
@@ -1311,7 +1310,8 @@ async function yfFetch(path) {
   throw new Error('yfFetch: tous les proxies ont échoué');
 }
 
-let eurRates = { USD: 1.08, GBP: 0.86, CHF: 0.98, JPY: 160, CAD: 1.48, AUD: 1.65 };
+let eurRates = {};
+const EUR_FALLBACKS = { USD: 1.08, GBP: 0.86, CHF: 0.98, JPY: 160, CAD: 1.48, AUD: 1.65 };
 
 async function fetchEurRate(currency) {
   if (currency === 'EUR') return 1;
@@ -1321,7 +1321,7 @@ async function fetchEurRate(currency) {
     const rate = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
     if (rate) { eurRates[currency] = rate; return rate; }
   } catch(e) {}
-  return 1;
+  return EUR_FALLBACKS[currency] || 1;
 }
 
 async function toEur(price, currency) {
@@ -1528,9 +1528,9 @@ function checkExistingPos() {
 
   if (existing) {
     if (posSide === 'buy') {
-      textEl.innerHTML = `<span style="color:#5ba4ff">↑ Position existante</span> — ${existing.qty} titre${existing.qty>1?'s':''} à PRU ${fmtEur(existing.price)}. Le PRU sera recalculé automatiquement.`;
+      textEl.innerHTML = `<span style="color:#5ba4ff">↑ Position existante</span> — ${existing.qty} titre${existing.qty>1?'s':''} à PRU ${fmtPrice(existing.price)}. Le PRU sera recalculé automatiquement.`;
     } else {
-      textEl.innerHTML = `<span style="color:#5ba4ff">Position actuelle</span> — ${existing.qty} titre${existing.qty>1?'s':''} à PRU ${fmtEur(existing.price)} · Valeur ${fmtEur(existing.qty * existing.current)}`;
+      textEl.innerHTML = `<span style="color:#5ba4ff">Position actuelle</span> — ${existing.qty} titre${existing.qty>1?'s':''} à PRU ${fmtPrice(existing.price)} · Valeur ${fmtEur(existing.qty * existing.current)}`;
       hintEl.textContent = `Max : ${existing.qty} titre${existing.qty>1?'s':''}`;
       hintEl.style.display = 'block';
       const qtyInput = document.getElementById('pos-qty');
@@ -1629,7 +1629,7 @@ async function confirmPosition() {
     if (existing) {
       const newPRU = (existing.qty * existing.price + qty * pru) / (existing.qty + qty);
       existing.qty = parseFloat((existing.qty + qty).toFixed(8));
-      existing.price = parseFloat(newPRU.toFixed(4));
+      existing.price = parseFloat(newPRU.toFixed(10));
       existing.current = currentEur; existing.lastUpdated = Date.now();
     } else {
       const pos = { id: crypto.randomUUID(), symbol: selectedTicker.symbol, name: selectedTicker.name, exchange: selectedTicker.exchange || '', currency: selectedTicker.currency || 'EUR', accountId, qty, price: pru, current: currentEur, lastUpdated: Date.now() };
@@ -1669,6 +1669,13 @@ async function deletePosition(id) {
   renderAll();
 }
 async function deleteAccount(id) {
+  // Supprimer d'abord les positions associées à ce compte
+  const orphanPositions = positions.filter(p => p.accountId === id);
+  for (const p of orphanPositions) {
+    await deletePositionDB(p.id);
+    delete positionHistory[p.id];
+  }
+  positions = positions.filter(p => p.accountId !== id);
   await deleteAccountDB(id);
   accounts = accounts.filter(a => a.id !== id);
   renderAll();
@@ -1688,6 +1695,7 @@ async function confirmLivretSolde(id) {
   if (a) {
     a.solde = parseFloat(input.value) || 0;
     await saveAccounts();
+    snapshotPatrimoine();
     const el = document.getElementById('livret-total-' + id);
     if (el) el.textContent = fmtEur(a.solde);
     renderSummary(); renderByAccount(); renderAllocation();
@@ -1753,6 +1761,14 @@ function sparklineSVG(data, color) {
 }
 function fmt(n,dec=2) { return new Intl.NumberFormat('fr-FR',{minimumFractionDigits:dec,maximumFractionDigits:dec}).format(n); }
 function fmtEur(n) { return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(n); }
+function fmtPrice(n) {
+  if (n === 0) return fmtEur(0);
+  const abs = Math.abs(n);
+  if (abs < 0.0001) return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:8,maximumFractionDigits:8}).format(n);
+  if (abs < 0.01)   return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:6,maximumFractionDigits:6}).format(n);
+  if (abs < 1)      return new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:4,maximumFractionDigits:4}).format(n);
+  return fmtEur(n);
+}
 function tagClass(type) { const m={PEA:'tag-pea',CTO:'tag-cto',PEE:'tag-pee',PER:'tag-per',AV:'tag-av',Crypto:'tag-crypto',Immo:'tag-immo',Livret:'tag-livret',Autre:'tag-autre'}; return m[type]||'tag-autre'; }
 function getAccountName(id) { const a=accounts.find(a=>a.id===id); return a?a.name:'—'; }
 function getAccountType(id) { const a=accounts.find(a=>a.id===id); return a?a.type:''; }
@@ -1794,8 +1810,10 @@ function renderAccounts() {
     }
     const myPos=positions.filter(p=>p.accountId===a.id);
     const total=myPos.reduce((s,p)=>s+p.current*p.qty,0);
-    const cost=myPos.reduce((s,p)=>s+p.price*p.qty,0);
-    const pnl=total-cost; const pct=cost>0?(pnl/cost*100):0;
+    const myPosWithPRU=myPos.filter(p=>p.price>0);
+    const cost=myPosWithPRU.reduce((s,p)=>s+p.price*p.qty,0);
+    const posVal=myPosWithPRU.reduce((s,p)=>s+p.current*p.qty,0);
+    const pnl=posVal-cost; const pct=cost>0?(pnl/cost*100):0;
     const pnlColor=pnl>=0?'var(--gain)':'var(--loss)';
     return `<div class="account-card" style="${animStyle}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -1816,23 +1834,27 @@ function renderPositions() {
   if (positions.length===0) { tbody.innerHTML='<tr><td colspan="11" class="empty-state">Aucune position — cliquez sur "+ Position"</td></tr>'; return; }
   tbody.innerHTML = positions.map((p, i) => {
     const value=p.current*p.qty;
-    const pnl=(p.current-p.price)*p.qty;
-    const pct=((p.current-p.price)/p.price)*100;
-    const color=pnl>=0?'var(--gain)':'var(--loss)';
-    const sparkColor=pnl>=0?'#00e5a0':'#ff4466';
+    const pnl = p.price > 0 ? (p.current-p.price)*p.qty : null;
+    const pct = p.price > 0 ? ((p.current-p.price)/p.price)*100 : null;
+    const color = pnl === null ? 'var(--muted)' : pnl>=0?'var(--gain)':'var(--loss)';
+    const sparkColor = pnl === null ? 'var(--muted)' : pnl>=0?'#00e5a0':'#ff4466';
     const hist=positionHistory[p.id]||[];
     const type=getAccountType(p.accountId);
-    const pnlDisplay=`<span style="color:${color}">${pnl>=0?'+':''}${fmtEur(pnl)}</span>`;
-    const pctDisplay=`<span style="color:${color}">${pnl>=0?'+':''}${fmt(pct)}%</span>`;
-    const priceDisplay=fmtEur(p.price);
+    const pnlDisplay = pnl === null
+      ? `<span style="color:var(--muted)">—</span>`
+      : `<span style="color:${color}">${pnl>=0?'+':''}${fmtEur(pnl)}</span>`;
+    const pctDisplay = pct === null
+      ? `<span style="color:var(--muted)" title="PRU inconnu">—</span>`
+      : `<span style="color:${color}">${pct>=0?'+':''}${fmt(pct)}%</span>`;
+    const priceDisplay = p.price > 0 ? fmtPrice(p.price) : `<span style="color:var(--muted)">—</span>`;
     const ago = p.lastUpdated ? timeAgo(p.lastUpdated) : '';
     return `<tr style="animation:rowIn 0.3s ease ${i * 0.04}s both">
       <td><div class="ticker-sym">${p.symbol}</div><div class="ticker-name">${p.name||''}</div></td>
       <td style="font-size:0.75rem">${getAccountName(p.accountId)}</td>
       <td><span class="tag ${tagClass(type)}">${type||'—'}</span></td>
-      <td>${fmt(p.qty,p.qty%1===0?0:4)}</td>
+      <td>${p.qty >= 1000 ? new Intl.NumberFormat('fr-FR',{maximumFractionDigits:0}).format(p.qty) : fmt(p.qty, p.qty%1===0?0:p.qty<0.001?8:4)}</td>
       <td>${priceDisplay}</td>
-      <td class="price-cell" id="price-${p.id}">${fmtEur(p.current)}<div style="font-size:0.6rem;color:var(--muted)">${ago}</div></td>
+      <td class="price-cell" id="price-${p.id}">${fmtPrice(p.current)}<div style="font-size:0.6rem;color:var(--muted)">${ago}</div></td>
       <td>${fmtEur(value)}</td>
       <td class="pnl">${pnlDisplay}</td>
       <td>${pctDisplay}</td>
@@ -1873,34 +1895,15 @@ function renderAllocation() {
   });
   const sorted=Object.entries(map).sort((a,b)=>b[1].val-a[1].val);
 
-  // ── Camembert ──
-  const size=180, cx=90, cy=90, r=80, innerR=46;
-  let startAngle=-Math.PI/2;
-  const slices=sorted.map(([sym,d],i)=>{
-    const pct=d.val/total;
-    const angle=pct*2*Math.PI;
-    const endAngle=startAngle+angle;
-    const x1=cx+r*Math.cos(startAngle),y1=cy+r*Math.sin(startAngle);
-    const x2=cx+r*Math.cos(endAngle),y2=cy+r*Math.sin(endAngle);
-    const ix1=cx+innerR*Math.cos(endAngle),iy1=cy+innerR*Math.sin(endAngle);
-    const ix2=cx+innerR*Math.cos(startAngle),iy2=cy+innerR*Math.sin(startAngle);
-    const largeArc=angle>Math.PI?1:0;
-    const color=ALLOC_COLORS[i%ALLOC_COLORS.length];
-    const path=`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix1} ${iy1} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix2} ${iy2} Z`;
-    startAngle=endAngle;
-    return {sym,d,pct,color,path};
-  });
-
-  const svgSlices=slices.map(s=>{
-    const label=(s.sym.startsWith('Livret:')?s.d.name:s.sym).replace(/'/g,'&apos;');
-    const safeVal=fmtEur(s.d.val).replace(/'/g,'&apos;');
-    return `<path d="${s.path}" fill="${s.color}" opacity="0.88" style="cursor:pointer;transition:opacity 0.15s,transform 0.15s;transform-origin:${cx}px ${cy}px"
-      onmouseover="this.style.opacity=1;this.style.transform='scale(1.05)';document.getElementById('pie-center-label').innerHTML='<div style=\\'font-weight:700;font-size:0.85rem\\'>${label}</div><div style=\\'font-size:0.72rem;color:var(--muted);margin-top:2px\\'>${(s.pct*100).toFixed(1)}%</div><div style=\\'font-size:0.7rem;margin-top:1px\\'>${safeVal}</div>'"
-      onmouseout="this.style.opacity=0.88;this.style.transform='scale(1)';document.getElementById('pie-center-label').innerHTML=''"/>`;
-  }).join('');
+  // Assign colors
+  const coloredSlices = sorted.map(([sym,d],i) => ({
+    sym, d,
+    pct: d.val/total,
+    color: ALLOC_COLORS[i%ALLOC_COLORS.length]
+  }));
 
   // ── Liste items ──
-  const listItems=slices.slice(0,10).map(s=>{
+  const listItems=coloredSlices.slice(0,10).map(s=>{
     const isLivret=s.sym.startsWith('Livret:');
     const label=isLivret?s.d.name:s.sym;
     const sub=isLivret?'':(s.d.name||'');
@@ -1930,21 +1933,7 @@ function renderAllocation() {
   }).join('');
 
   el.innerHTML=`
-    <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
-      <div style="flex-shrink:0;position:relative">
-        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block">
-          ${svgSlices}
-          <circle cx="${cx}" cy="${cy}" r="${innerR-1}" fill="var(--surface)"/>
-          <foreignObject x="${cx-innerR+4}" y="${cy-innerR+4}" width="${(innerR-4)*2}" height="${(innerR-4)*2}">
-            <div xmlns="http://www.w3.org/1999/xhtml" id="pie-center-label"
-              style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-family:Inter,sans-serif;color:var(--text);font-size:0.72rem;line-height:1.3;padding:4px">
-            </div>
-          </foreignObject>
-        </svg>
-        <div style="text-align:center;margin-top:4px;font-size:0.62rem;color:var(--muted)">${sorted.length} actif${sorted.length>1?'s':''} · ${fmtEur(total)}</div>
-      </div>
-      <div style="flex:1;min-width:200px;padding-top:4px">${listItems}</div>
-    </div>`;
+    <div style="padding-top:4px">${listItems}</div>`;
 }
 
 function renderByAccount() {
@@ -1956,7 +1945,6 @@ function renderByAccount() {
   const fixedTotalBA = activeAccountsBA.filter(a=>fixedTypesBA.includes(a.type)).reduce((s,a)=>s+(a.solde||0),0);
   const totalBA = positions.filter(p=>activeAccountIdsBA.has(p.accountId)).reduce((s,p)=>s+p.current*p.qty,0) + fixedTotalBA;
 
-  // Calcul valeurs par compte, triés par valeur desc
   const items = accounts.map((a,i) => {
     const val = fixedTypesBA.includes(a.type)
       ? (a.solde||0)
@@ -1964,37 +1952,58 @@ function renderByAccount() {
     const isActive = isTypeActive(a.type);
     const pct = totalBA > 0 ? (val / totalBA * 100) : 0;
     return { a, val, isActive, pct, color: ALLOC_COLORS[i % ALLOC_COLORS.length] };
-  }).sort((a,b) => b.val - a.val);
+  }).filter(i => i.isActive && i.val > 0).sort((a,b) => b.val - a.val);
 
-  const maxVal = Math.max(...items.map(i => i.val), 1);
+  if (items.length === 0) { el.innerHTML='<div class="empty-state">Aucune valeur calculable</div>'; return; }
+
+  // Build responsive pie — slices computed after DOM insert to get real width
 
   el.innerHTML = `
-    <div style="margin-bottom:14px">
-      ${items.map(({a, val, isActive, pct, color}) => `
-        <div style="margin-bottom:14px;opacity:${isActive?1:0.3}">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-            <div style="display:flex;align-items:center;gap:7px">
-              <div style="width:10px;height:10px;border-radius:3px;background:${color};flex-shrink:0"></div>
-              <span style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:0.82rem">${a.name}</span>
-              <span class="tag ${tagClass(a.type)}" style="font-size:0.55rem;padding:1px 5px">${a.type}</span>
-              ${!isActive ? '<span style="font-size:0.6rem;color:var(--muted)">(exclu)</span>' : ''}
-            </div>
-            <div style="text-align:right;flex-shrink:0">
-              <span style="font-family:\'DM Mono\',monospace;font-size:0.78rem">${fmtEur(val)}</span>
-              <span style="font-size:0.62rem;color:var(--muted);margin-left:6px">${pct.toFixed(1)}%</span>
-            </div>
-          </div>
-          <div style="height:10px;background:var(--border);border-radius:5px;overflow:hidden;position:relative">
-            <div style="height:100%;width:${isActive ? (val/maxVal*100) : 0}%;background:${color};border-radius:5px;transition:width 0.7s cubic-bezier(0.4,0,0.2,1);opacity:0.85;position:relative">
-              <div style="position:absolute;inset:0;background:linear-gradient(90deg,transparent 60%,rgba(255,255,255,0.15))"></div>
-            </div>
-          </div>
-        </div>`).join('')}
-    </div>
-    <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:0.7rem;color:var(--muted)">${items.filter(i=>i.isActive).length} compte${items.filter(i=>i.isActive).length>1?'s':''} actif${items.filter(i=>i.isActive).length>1?'s':''}</span>
-      <span style="font-family:'DM Mono',monospace;font-size:0.82rem;font-weight:600">${fmtEur(totalBA)}</span>
+    <div style="display:flex;justify-content:center;align-items:center;padding:8px 0">
+      <div style="position:relative;width:100%" id="ba-pie-wrap">
+      </div>
     </div>`;
+
+  // Draw responsive pie using actual container width
+  requestAnimationFrame(() => {
+    const wrap = document.getElementById('ba-pie-wrap');
+    if (!wrap) return;
+    const W = Math.min(wrap.clientWidth || 300, 420);
+    const cx = W/2, cy = W/2, r = W/2 - 12, innerR = W * 0.26;
+    let startAngle = -Math.PI/2;
+
+    const svgSlices = items.map(({a, val, pct, color}) => {
+      const angle = (pct/100)*2*Math.PI;
+      const endAngle = startAngle + angle;
+      const x1=cx+r*Math.cos(startAngle), y1=cy+r*Math.sin(startAngle);
+      const x2=cx+r*Math.cos(endAngle),   y2=cy+r*Math.sin(endAngle);
+      const ix1=cx+innerR*Math.cos(endAngle);
+      const iy1=cy+innerR*Math.sin(endAngle);
+      const ix2=cx+innerR*Math.cos(startAngle);
+      const iy2=cy+innerR*Math.sin(startAngle);
+      const largeArc = angle > Math.PI ? 1 : 0;
+      const path = `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${ix1} ${iy1} A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix2} ${iy2} Z`;
+      startAngle = endAngle;
+      const safeVal = fmtEur(val).replace(/'/g,'&apos;');
+      const safeName = a.name.replace(/'/g,'&apos;');
+      const safeType = a.type.replace(/'/g,'&apos;');
+      return `<path d="${path}" fill="${color}" opacity="0.88" style="cursor:pointer;transition:opacity 0.15s,transform 0.15s;transform-origin:${cx}px ${cy}px"
+        onmouseover="this.style.opacity=1;this.style.transform='scale(1.04)';document.getElementById('ba-pie-center').innerHTML='<div style=\\'font-family:Plus Jakarta Sans,sans-serif;font-weight:700;font-size:0.9rem;text-align:center\\'>${safeName}</div><div style=\\'font-size:0.68rem;color:var(--muted);margin-top:2px;text-align:center\\'>${safeType} · ${pct.toFixed(1)}%</div><div style=\\'font-size:0.82rem;font-weight:600;margin-top:3px;text-align:center\\'>${safeVal}</div>'"
+        onmouseout="this.style.opacity=0.88;this.style.transform='scale(1)';document.getElementById('ba-pie-center').innerHTML=''"/>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <svg width="100%" viewBox="0 0 ${W} ${W}" style="display:block">
+        ${svgSlices}
+        <circle cx="${cx}" cy="${cy}" r="${innerR-1}" fill="var(--surface)"/>
+        <foreignObject x="${cx-innerR+6}" y="${cy-innerR+6}" width="${(innerR-6)*2}" height="${(innerR-6)*2}">
+          <div xmlns="http://www.w3.org/1999/xhtml" id="ba-pie-center"
+            style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Inter,sans-serif;color:var(--text);line-height:1.4;padding:4px">
+          </div>
+        </foreignObject>
+      </svg>
+      <div style="text-align:center;margin-top:6px;font-size:0.62rem;color:var(--muted)">${items.length} compte${items.length>1?'s':''} · ${fmtEur(totalBA)}</div>`;
+  });
 }
 
 function renderSummary() {
@@ -2004,9 +2013,13 @@ function renderSummary() {
   const fixedTotal = activeAccounts.filter(a => fixedTypes.includes(a.type)).reduce((s,a)=>s+(a.solde||0),0);
   const activePositions = positions.filter(p => activeAccountIds.has(p.accountId));
   const total = activePositions.reduce((s,p)=>s+p.current*p.qty,0) + fixedTotal;
-  const cost = activePositions.reduce((s,p)=>s+p.price*p.qty,0);
-  const totalPnl=total-cost;
-  const totalPnlPct=cost>0?(totalPnl/cost*100):0;
+  // PnL calculé uniquement sur les positions avec un PRU connu (price > 0)
+  // Les positions à price=0 (PRU inconnu) sont exclues comme les livrets
+  const positionsWithPRU = activePositions.filter(p => p.price > 0);
+  const cost = positionsWithPRU.reduce((s,p)=>s+p.price*p.qty,0);
+  const positionsValue = positionsWithPRU.reduce((s,p)=>s+p.current*p.qty,0);
+  const totalPnl = positionsValue - cost;
+  const totalPnlPct = cost>0?(totalPnl/cost*100):0;
   // Animated counter for total
   const totalEl = document.getElementById('totalValue');
   const prevText = totalEl.textContent;
@@ -2032,29 +2045,26 @@ function renderSummary() {
   } else {
     totalEl.textContent = fmtEur(total);
   }
-  document.getElementById('posCount').textContent=activePositions.length;
+  // Capital investi
+  const ciEl = document.getElementById('capitalInvested');
+  if (ciEl) { ciEl.textContent = cost > 0 ? fmtEur(cost) : '—'; ciEl.className = 'stat-val'; }
+
   const tp=document.getElementById('totalPnl');
-  const newPnlText = (totalPnl>=0?'+':'')+fmtEur(totalPnl)+' ('+(totalPnl>=0?'+':'')+fmt(totalPnlPct)+'%)';
+  const newPnlText = cost > 0 ? ((totalPnl>=0?'+':'')+fmtEur(totalPnl)+' ('+(totalPnl>=0?'+':'')+fmt(totalPnlPct)+'%)') : '—';
   if (tp.textContent !== newPnlText) {
-    tp.style.animation = 'none'; tp.offsetHeight; // reflow
+    tp.style.animation = 'none'; tp.offsetHeight;
     tp.style.animation = 'countUp 0.4s ease both';
   }
   tp.textContent = newPnlText;
   tp.className='stat-val '+(totalPnl>=0?'gain-col':'loss-col');
-  // P&L jour — basé sur la variation du jour de chaque position active
-  const activePos2 = positions.filter(p => activeAccountIds.has(p.accountId));
-  const dailyPnlVal = activePos2.reduce((s, p) => {
-    if (p.change != null) return s + (p.change * p.qty);
-    return s;
-  }, 0);
-  const hasDaily = activePos2.some(p => p.change != null);
-  const dp = document.getElementById('dailyPnl');
-  if (hasDaily) {
-    dp.textContent = (dailyPnlVal >= 0 ? '+' : '') + fmtEur(dailyPnlVal);
-    dp.className = 'stat-val ' + (dailyPnlVal >= 0 ? 'gain-col' : 'loss-col');
-    dp.style.color = '';
-  } else {
-    dp.textContent = '—'; dp.className = 'stat-val'; dp.style.color = 'var(--muted)';
+
+  // Dernière mise à jour des prix
+  const luEl = document.getElementById('lastUpdateStat');
+  if (luEl) {
+    const lastTs = positions.reduce((m, p) => Math.max(m, p.lastUpdated || 0), 0);
+    luEl.textContent = lastTs > 0 ? timeAgo(lastTs) : '—';
+    luEl.className = 'stat-val';
+    luEl.style.color = 'var(--muted)';
   }
 }
 
@@ -2075,12 +2085,6 @@ function showToast(msg, type = 'error') {
   toast.style.opacity = '1';
   clearTimeout(toast._t);
   toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
-}
-
-// Wrap saves with error handling
-async function safeSave(fn, label) {
-  try { await fn(); }
-  catch(e) { showToast(`⚠️ Erreur de sauvegarde${label ? ' (' + label + ')' : ''}`); console.error(e); }
 }
 
 // ─── EXPOSE GLOBALS ──────────────────────────────────────────────────────────
@@ -2112,20 +2116,6 @@ window.refreshAllPrices = refreshAllPrices;
 // ─── OBJECTIFS D'ÉPARGNE ─────────────────────────────────────────────────────
 let goals = [];
 let selectedGoalEmoji = '🏠';
-
-async function loadGoals() {
-  if (!currentUser) return;
-  const { data, error } = await sb.from('goals')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .order('created_at');
-  if (!error) {
-    goals = (data || []).map(g => ({
-      id: g.id, name: g.name, target: g.target,
-      current: g.current, emoji: g.emoji, createdAt: new Date(g.created_at).getTime()
-    }));
-  }
-}
 
 async function persistGoals(goal, isDelete = false) {
   if (!currentUser) return;
@@ -2362,20 +2352,87 @@ function filterChartData(data, period) {
   return data.filter(d => d.date >= cutStr);
 }
 
+// Interpolate between sparse real snapshots to get a daily series
+function buildInterpolatedSeries(data, startDate, endDate) {
+  if (!data || data.length === 0) return [];
+  // Add current patrimoine as "today" if not already present
+  const today = new Date().toISOString().slice(0,10);
+  const currentVal = computeCurrentPatrimoine();
+  let augmented = [...data];
+  if (currentVal > 0 && (!augmented.length || augmented[augmented.length-1].date !== today)) {
+    augmented = [...augmented, { date: today, value: currentVal, real: true }];
+  }
+  augmented = augmented.map(d => ({ ...d, real: true }));
+  if (augmented.length === 0) return [];
+
+  // Build full daily series by interpolating between real points
+  const result = [];
+  const start = new Date((startDate || augmented[0].date) + 'T12:00:00');
+  const end = new Date((endDate || today) + 'T12:00:00');
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const ds = d.toISOString().slice(0,10);
+    const real = augmented.find(p => p.date === ds);
+    if (real) { result.push({ date: ds, value: real.value, estimated: false }); continue; }
+    // Find surrounding real points
+    const before = [...augmented].reverse().find(p => p.date < ds);
+    const after = augmented.find(p => p.date > ds);
+    if (before && after) {
+      const t0 = new Date(before.date + 'T12:00:00').getTime();
+      const t1 = new Date(after.date + 'T12:00:00').getTime();
+      const tc = d.getTime();
+      const ratio = (tc - t0) / (t1 - t0);
+      result.push({ date: ds, value: before.value + (after.value - before.value) * ratio, estimated: true });
+    } else if (before) {
+      result.push({ date: ds, value: before.value, estimated: true });
+    }
+  }
+  return result;
+}
+
 function renderChart() {
   const wrap = document.getElementById('chartWrap');
   const emptyEl = document.getElementById('chartEmpty');
-  const data = filterChartData(patrimoineHistory, currentChartPeriod);
+  const rawData = filterChartData(patrimoineHistory, currentChartPeriod);
 
-  // Remove old SVG
+  // Remove old SVG, single-point state, and interp note
   const oldSvg = wrap.querySelector('svg.chart-svg');
   if (oldSvg) oldSvg.remove();
+  const oldNote = wrap.querySelector('.chart-interp-note');
+  if (oldNote) oldNote.remove();
+  const oldSingle = wrap.querySelector('.chart-single-point');
+  if (oldSingle) oldSingle.remove();
 
-  if (data.length < 2) {
+  if (rawData.length < 1 && computeCurrentPatrimoine() <= 0) {
     emptyEl.style.display = 'block';
     return;
   }
   emptyEl.style.display = 'none';
+
+  // Build interpolated series
+  const today = new Date().toISOString().slice(0,10);
+  let startDate = rawData.length > 0 ? rawData[0].date : today;
+  const data = buildInterpolatedSeries(rawData, startDate, today);
+  if (data.length < 2) {
+    // Si un seul point (premier lancement aujourd'hui), afficher un état "début"
+    if (data.length === 1) {
+      emptyEl.style.display = 'none';
+      const singleWrap = document.createElement('div');
+      singleWrap.className = 'chart-single-point';
+      singleWrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:160px;gap:8px';
+      singleWrap.innerHTML = `
+        <div style="font-size:1.6rem">📍</div>
+        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1.1rem">${fmtEur(data[0].value)}</div>
+        <div style="font-size:0.72rem;color:var(--muted)">Point de départ enregistré — le graphique s'enrichira à chaque visite</div>`;
+      wrap.insertBefore(singleWrap, wrap.querySelector('.chart-cursor'));
+    } else {
+      emptyEl.style.display = 'block';
+    }
+    return;
+  }
+
+  const hasEstimated = data.some(d => d.estimated);
+  const realCount = rawData.length + 1; // +1 for today
 
   const W = wrap.clientWidth || 800;
   const H = 200;
@@ -2391,13 +2448,40 @@ function renderChart() {
   const xScale = (i) => pad.left + (i / (data.length - 1)) * iW;
   const yScale = (v) => pad.top + iH - ((v - minV) / range) * iH;
 
-  const pts = data.map((d,i) => `${xScale(i)},${yScale(d.value)}`).join(' ');
-  const baseY = pad.top + iH;
-  const areaPath = `M ${xScale(0)},${baseY} ` + data.map((d,i) => `L ${xScale(i)},${yScale(d.value)}`).join(' ') + ` L ${xScale(data.length-1)},${baseY} Z`;
-
   const isGain = data[data.length-1].value >= data[0].value;
   const lineColor = isGain ? '#00e5a0' : '#ff4466';
   const gradId = 'chartGrad_' + Date.now();
+
+  // Build path: solid for real segments, dashed for interpolated
+  // We split the polyline into segments
+  let solidSegments = [];
+  let currentSeg = [];
+  let estimatedSegs = [];
+  let currentEstSeg = [];
+
+  data.forEach((d, i) => {
+    const pt = `${xScale(i)},${yScale(d.value)}`;
+    if (!d.estimated) {
+      currentSeg.push(pt);
+      if (currentEstSeg.length > 0) { estimatedSegs.push([...currentEstSeg]); currentEstSeg = []; }
+    } else {
+      currentEstSeg.push(pt);
+      if (currentSeg.length > 0) { solidSegments.push([...currentSeg]); currentSeg = []; }
+    }
+  });
+  if (currentSeg.length > 0) solidSegments.push(currentSeg);
+  if (currentEstSeg.length > 0) estimatedSegs.push(currentEstSeg);
+
+  // Build a combined area for gradient background
+  const baseY = pad.top + iH;
+  const areaPath = `M ${xScale(0)},${baseY} ` + data.map((d,i) => `L ${xScale(i)},${yScale(d.value)}`).join(' ') + ` L ${xScale(data.length-1)},${baseY} Z`;
+
+  // Real snapshots dots — use index directly, no indexOf
+  const realDots = data.map((d, i) => {
+    if (d.estimated) return '';
+    const x = xScale(i); const y = yScale(d.value);
+    return `<circle cx="${x}" cy="${y}" r="3.5" fill="${lineColor}" opacity="0.9"/>`;
+  }).join('');
 
   // Y axis labels
   const yTicks = 4;
@@ -2420,6 +2504,13 @@ function renderChart() {
     xAxisHTML += `<text x="${x}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#5a6478" font-family="DM Mono,monospace">${label}</text>`;
   }
 
+  const solidLines = solidSegments.map(seg =>
+    `<polyline points="${seg.join(' ')}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+  ).join('');
+  const estLines = estimatedSegs.map(seg =>
+    `<polyline points="${seg.join(' ')}" fill="none" stroke="${lineColor}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5,4" opacity="0.45"/>`
+  ).join('');
+
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'chart-svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -2427,14 +2518,15 @@ function renderChart() {
   svg.innerHTML = `
     <defs>
       <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.18"/>
+        <stop offset="0%" stop-color="${lineColor}" stop-opacity="0.12"/>
         <stop offset="100%" stop-color="${lineColor}" stop-opacity="0"/>
       </linearGradient>
     </defs>
-    ${yAxisHTML}
-    ${xAxisHTML}
+    ${yAxisHTML}${xAxisHTML}
     <path d="${areaPath}" fill="url(#${gradId})"/>
-    <polyline points="${pts}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${estLines}
+    ${solidLines}
+    ${realDots}
   `;
 
   // Interaction: tooltip + cursor
@@ -2454,9 +2546,9 @@ function renderChart() {
     cursor.style.opacity = '1';
 
     const tt = document.getElementById('chartTooltip');
-    const d = new Date(pt.date + 'T12:00:00');
-    document.getElementById('ttDate').textContent = d.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'long', year:'numeric' });
-    document.getElementById('ttVal').textContent = fmtEur(pt.value);
+    const dObj = new Date(pt.date + 'T12:00:00');
+    document.getElementById('ttDate').textContent = dObj.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'long', year:'numeric' }) + (pt.estimated ? ' ~' : '');
+    document.getElementById('ttVal').textContent = fmtEur(pt.value) + (pt.estimated ? ' (estimé)' : '');
     const ttDelta = document.getElementById('ttDelta');
     ttDelta.textContent = (delta >= 0 ? '+' : '') + fmtEur(delta) + ' (' + (deltaPct >= 0 ? '+' : '') + fmt(deltaPct) + '%)';
     ttDelta.style.color = delta >= 0 ? '#00e5a0' : '#ff4466';
@@ -2471,6 +2563,15 @@ function renderChart() {
   });
 
   wrap.insertBefore(svg, wrap.querySelector('.chart-cursor'));
+
+  // Note interpolation
+  if (hasEstimated && realCount < data.length) {
+    const note = document.createElement('div');
+    note.className = 'chart-interp-note';
+    note.style.cssText = 'font-size:0.62rem;color:var(--muted);text-align:right;margin-top:4px;padding:0 4px';
+    note.innerHTML = `<span style="opacity:0.6">— — interpolé</span> &nbsp; <span style="border-bottom:1.5px solid currentColor">——</span> mesure réelle · ${realCount} point${realCount>1?'s':''}`;
+    wrap.after(note);
+  }
 }
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────────────────────
@@ -2499,7 +2600,7 @@ function renderTransactions() {
       <div class="tx-icon ${isBuy ? 'buy' : 'sell'}" style="color:${isBuy ? 'var(--gain)' : 'var(--loss)'}">${icon}</div>
       <div class="tx-info">
         <div class="tx-sym">${tx.symbol}</div>
-        <div class="tx-detail">${tx.qty} × ${fmtEur(tx.price)} · ${tx.accountName}</div>
+        <div class="tx-detail">${tx.qty} × ${fmtPrice(tx.price)} · ${tx.accountName}</div>
       </div>
       <div class="tx-right">
         <div class="tx-val" style="color:${isBuy ? 'var(--gain)' : 'var(--loss)'}">${isBuy ? '+' : '-'}${fmtEur(val)}</div>
@@ -2611,25 +2712,29 @@ function showDog(user) {
   widget.style.display = 'flex';
   svgWrap.className = 'dog-svg-wrap'; // reset, bounce in
 
-  // Calcul recap patrimoine
+  // Calcul recap patrimoine — même logique que renderSummary (exclut livrets + price=0)
   const total = computeCurrentPatrimoine();
-  const cost = positions.reduce((s,p) => s + p.price * p.qty, 0);
-  const pnl = total - cost;
+  const positionsWithPRU = positions.filter(p => p.price > 0);
+  const cost = positionsWithPRU.reduce((s,p) => s + p.price * p.qty, 0);
+  const posVal = positionsWithPRU.reduce((s,p) => s + p.current * p.qty, 0);
+  const pnl = posVal - cost;
   const name = (user.email || '').split('@')[0];
   const displayName = name.charAt(0).toUpperCase() + name.slice(1);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir';
 
-  const pnlStr = pnl >= 0
-    ? `<strong style="color:var(--gain)">+${fmtEur(pnl)}</strong>`
-    : `<strong style="color:var(--loss)">${fmtEur(pnl)}</strong>`;
+  const pnlStr = cost > 0
+    ? (pnl >= 0
+      ? `<strong style="color:var(--gain)">+${fmtEur(pnl)}</strong>`
+      : `<strong style="color:var(--loss)">${fmtEur(pnl)}</strong>`)
+    : '<strong>—</strong>';
 
   bubble.innerHTML = `
     <div class="dog-bubble-name">🐾 ${greeting}, <span>${displayName}</span> !</div>
     <div class="dog-bubble-stat">
       Patrimoine : <strong>${fmtEur(total)}</strong><br>
-      P&L total : ${pnlStr}<br>
+      Plus-value : ${pnlStr}<br>
       ${positions.length} position${positions.length > 1 ? 's' : ''} active${positions.length > 1 ? 's' : ''}
     </div>`;
   bubble.style.display = 'block';
@@ -2645,11 +2750,26 @@ function showDog(user) {
     setTimeout(() => {
       bubble.style.display = 'none';
       bubble.classList.remove('hiding');
-      // Passe en idle float
       svgWrap.className = 'dog-svg-wrap idle';
     }, 300);
   }, 5000);
 }
+
+const DOG_PHRASES = [
+  'Waf ! 🐾',
+  'On économise pour les vacances ? 🌴',
+  'Chaque centime compte ! 🐕',
+  'Vous êtes trop forts tous les deux 💕',
+  'Un petit sou de plus aujourd\'hui ~ 🌸',
+  'Je veille sur vos économies 🐾',
+  'Vos futurs projets vous remercient ! 🏡',
+  'L\'amour et les sous, ça fait deux 💛',
+  'Hé, cliquez pas trop fort sur moi 🥺',
+  'Je crois en vous ! 🌟',
+  'Économiser c\'est s\'offrir demain 🎀',
+  'Un bisou pour le courage 💋',
+];
+let lastDogPhrase = -1;
 
 function dogClick() {
   const svgWrap = document.getElementById('dogSvgWrap');
@@ -2657,19 +2777,23 @@ function dogClick() {
 
   // Shake
   svgWrap.classList.remove('shaking', 'idle');
-  void svgWrap.offsetWidth; // reflow
+  void svgWrap.offsetWidth;
   svgWrap.classList.add('shaking');
 
-  // Waf!
+  // Phrase aléatoire (pas deux fois la même d'affilée)
+  let idx;
+  do { idx = Math.floor(Math.random() * DOG_PHRASES.length); } while (idx === lastDogPhrase);
+  lastDogPhrase = idx;
+
   if (dogWafTimer) clearTimeout(dogWafTimer);
-  wafWrap.innerHTML = '<div class="waf-bubble">Waf ! 🐾</div>';
+  wafWrap.innerHTML = `<div class="waf-bubble">${DOG_PHRASES[idx]}</div>`;
   dogWafTimer = setTimeout(() => {
     const waf = wafWrap.querySelector('.waf-bubble');
     if (waf) {
       waf.classList.add('fade');
       setTimeout(() => { wafWrap.innerHTML = ''; }, 300);
     }
-  }, 900);
+  }, 1400);
 
   setTimeout(() => {
     svgWrap.classList.remove('shaking');
@@ -2754,7 +2878,6 @@ async function initApp(user) {
   renderAll();
   renderPrelevements();
   renderGoals();
-  renderChart();
   animateSections();
   fetchEurUsd();
   setInterval(fetchEurUsd, 5 * 60 * 1000);
@@ -2913,7 +3036,7 @@ async function loadNewsIndices() {
   }));
 }
 
-async function loadNews(feedKey, btnEl) {
+async function loadNews() {
   if (newsLoading) return;
   newsLoading = true;
 
@@ -3002,15 +3125,14 @@ function simComputeForRate(initial, monthly, years, rate) {
   let capital = initial;
   let totalInvested = initial;
   let prevCapital = initial;
-  data.push({ year: 0, capital: initial, invested: initial, interest: 0, annualInterest: 0 });
+  data.push({ year: 0, capital: initial, invested: initial, interest: 0 });
   for (let y = 1; y <= years; y++) {
     for (let m = 0; m < 12; m++) {
       capital = capital * (1 + monthlyRate) + monthly;
       totalInvested += monthly;
     }
     const totalInterest = capital - totalInvested;
-    const annualInterest = capital - prevCapital - monthly * 12;
-    data.push({ year: y, capital, invested: totalInvested, interest: totalInterest, annualInterest });
+    data.push({ year: y, capital, invested: totalInvested, interest: totalInterest });
     prevCapital = capital;
   }
   return { data, final: capital, totalInvested, totalInterest: capital - totalInvested };
@@ -3029,11 +3151,10 @@ function simUpdate() {
 
   // 3 scénarios : ±3% autour du taux réaliste
   const ratePess = Math.max(0, rate - 3);
-  const rateReal = rate;
   const rateOpti = rate + 3;
 
   const resPess = simComputeForRate(initial, monthly, years, ratePess / 100);
-  const resReal = simComputeForRate(initial, monthly, years, rateReal / 100);
+  const resReal = simComputeForRate(initial, monthly, years, rate / 100);
   const resOpti = simComputeForRate(initial, monthly, years, rateOpti / 100);
 
   simData     = resReal.data;
@@ -3042,7 +3163,7 @@ function simUpdate() {
 
   // Labels taux
   document.getElementById('sim-rate-pess').textContent = simPct(ratePess);
-  document.getElementById('sim-rate-real').textContent = simPct(rateReal);
+  document.getElementById('sim-rate-real').textContent = simPct(rate);
   document.getElementById('sim-rate-opti').textContent = simPct(rateOpti);
 
   // Résultats pessimiste
@@ -3053,7 +3174,7 @@ function simUpdate() {
   // Résultats réaliste
   document.getElementById('sim-res-total-real').textContent = simFmt(resReal.final);
   document.getElementById('sim-res-interest-real').textContent = '+' + simFmt(resReal.totalInterest) + ' d\'intérêts';
-  document.getElementById('sim-res-passive-real').textContent = simFmt(resReal.final * (rateReal / 100 / 12)) + '/mois';
+  document.getElementById('sim-res-passive-real').textContent = simFmt(resReal.final * (rate / 100 / 12)) + '/mois';
 
   // Résultats optimiste
   document.getElementById('sim-res-total-opti').textContent = simFmt(resOpti.final);
@@ -3061,7 +3182,7 @@ function simUpdate() {
   document.getElementById('sim-res-passive-opti').textContent = simFmt(resOpti.final * (rateOpti / 100 / 12)) + '/mois';
 
   // Jauge composition (réaliste)
-  const { final, totalInvested, totalInterest, initial: init } = { final: resReal.final, totalInvested: resReal.totalInvested, totalInterest: resReal.totalInterest, initial };
+  const { final, totalInvested, totalInterest } = resReal;
   const totalMonthly = totalInvested - initial;
   const pInit = final > 0 ? (initial / final * 100) : 0;
   const pMonthly = final > 0 ? (totalMonthly / final * 100) : 0;
