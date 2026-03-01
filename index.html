@@ -1823,6 +1823,10 @@ async function addAccount() {
   const solde = type === 'Livret' || type === 'Immo' || type === 'Autre' ? (parseFloat(document.getElementById('acc-solde').value) || 0) : null;
   if (solde !== null && solde < 0) return alert('Le solde ne peut pas être négatif');
   accounts.push({ id: crypto.randomUUID(), name, type, solde });
+  // Si filteredTypes est déjà initialisé et que ce type est nouveau, l'activer automatiquement
+  if (filteredTypes && !filteredTypes.includes(type)) {
+    filteredTypes.push(type);
+  }
   await saveAccounts();
   closeModal('account');
   document.getElementById('acc-name').value = '';
@@ -1930,7 +1934,7 @@ async function confirmLivretSolde(id) {
     a.solde = newSolde || 0;
     const saved = await saveAccounts();
     if (saved === false) { a.solde = prevSolde; showToast('⚠️ Erreur sauvegarde', 'error'); return; }
-    snapshotPatrimoine(); // seulement si save OK
+    await snapshotPatrimoine(); // seulement si save OK
     const el = document.getElementById('livret-total-' + id);
     if (el) el.textContent = fmtEur(a.solde);
     renderSummary(); renderByAccount(); renderAllocation();
@@ -1973,7 +1977,7 @@ async function refreshAllPrices() {
     });
 
     await savePositions();
-    snapshotPatrimoine();
+    await snapshotPatrimoine();
     const now = new Date();
     if (badge) badge.textContent = `Actualisé à ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     renderAll();
@@ -1993,6 +1997,9 @@ async function refreshAllPrices() {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+// ─── HTML ESCAPE (partagé par tous les renders) ───────────────────────────────
+const _esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
 function sparklineSVG(data, color) {
   if (!data||data.length<2) return '';
   const w=60,h=24; const min=Math.min(...data),max=Math.max(...data); const range=max-min||1;
@@ -2035,10 +2042,10 @@ function renderAccounts() {
       const solde = a.solde || 0;
       return `<div class="account-card" style="${animStyle}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div class="account-type">${a.name}</div>
+          <div class="account-type">${_esc(a.name)}</div>
           <button class="del-btn" onclick="deleteAccount('${a.id}')">✕</button>
         </div>
-        <span class="tag ${tagClass(a.type)}">${a.type}</span>
+        <span class="tag ${tagClass(a.type)}">${_esc(a.type)}</span>
         <div style="margin-top:10px">
           <div style="display:flex;align-items:center;gap:8px">
             <div class="account-total" id="livret-total-${a.id}">${fmtEur(solde)}</div>
@@ -2069,10 +2076,10 @@ function renderAccounts() {
     const pnlColor=pnl>=0?'var(--gain)':'var(--loss)';
     return `<div class="account-card" style="${animStyle}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div class="account-type">${a.name}</div>
+        <div class="account-type">${_esc(a.name)}</div>
         <button class="del-btn" onclick="deleteAccount('${a.id}')">✕</button>
       </div>
-      <span class="tag ${tagClass(a.type)}">${a.type}</span>
+      <span class="tag ${tagClass(a.type)}">${_esc(a.type)}</span>
       <div style="margin-top:10px">
         <div class="account-total">${fmtEur(total)}</div>
         <div class="account-perf" style="color:${pnlColor}">${pnl>=0?'+':''}${fmtEur(pnl)} (${pnl>=0?'+':''}${fmt(pct)}%)</div>
@@ -2101,8 +2108,8 @@ function renderPositions() {
     const priceDisplay = p.price > 0 ? fmtPrice(p.price) : `<span style="color:var(--muted)">—</span>`;
     const ago = p.lastUpdated ? timeAgo(p.lastUpdated) : '';
     return `<tr style="animation:rowIn 0.3s ease ${i * 0.04}s both">
-      <td><div class="ticker-sym">${p.symbol}</div><div class="ticker-name">${p.name||''}</div></td>
-      <td style="font-size:0.75rem">${getAccountName(p.accountId)}</td>
+      <td><div class="ticker-sym">${_esc(p.symbol)}</div><div class="ticker-name">${_esc(p.name||'')}</div></td>
+      <td style="font-size:0.75rem">${_esc(getAccountName(p.accountId))}</td>
       <td><span class="tag ${tagClass(type)}">${type||'—'}</span></td>
       <td>${p.qty >= 1000 ? _fmtQty.format(p.qty) : fmt(p.qty, p.qty%1===0?0:p.qty<0.001?8:4)}</td>
       <td>${priceDisplay}</td>
@@ -2433,7 +2440,7 @@ function renderGoals() {
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:1.4rem">${g.emoji || '🎯'}</span>
           <div>
-            <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.9rem">${g.name}</div>
+            <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.9rem">${_esc(g.name)}</div>
             <div style="font-size:0.65rem;color:var(--muted);margin-top:1px">Objectif : ${fmtEur(g.target)}</div>
           </div>
         </div>
@@ -2840,8 +2847,8 @@ function renderTransactions() {
     return `<div class="tx-item">
       <div class="tx-icon ${isBuy ? 'buy' : 'sell'}" style="color:${isBuy ? 'var(--gain)' : 'var(--loss)'}">${icon}</div>
       <div class="tx-info">
-        <div class="tx-sym">${tx.symbol}</div>
-        <div class="tx-detail">${tx.qty} × ${fmtPrice(tx.price)} · ${tx.accountName}</div>
+        <div class="tx-sym">${_esc(tx.symbol)}</div>
+        <div class="tx-detail">${tx.qty} × ${fmtPrice(tx.price)} · ${_esc(tx.accountName)}</div>
       </div>
       <div class="tx-right">
         <div class="tx-val" style="color:${isBuy ? 'var(--gain)' : 'var(--loss)'}">${isBuy ? '+' : '-'}${fmtEur(val)}</div>
@@ -2943,7 +2950,7 @@ function renderPrelevements() {
     return `<div class="prel-row" id="prel-row-${p.id}">
       <div class="prel-name">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-weight:500">${p.name}</span>
+          <span style="font-weight:500">${_esc(p.name)}</span>
           ${shareHtml}
         </div>
         <div style="font-size:0.68rem;color:var(--muted);margin-top:2px">${CAT_LABELS[p.cat]||p.cat}</div>
