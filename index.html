@@ -701,10 +701,7 @@
   <!-- TAB: VUE D'ENSEMBLE -->
   <div class="tab-panel active" id="tab-overview">
 
-  <div style="margin-bottom:24px">
-    <div class="page-title">Bonjour, <span id="overviewGreetName" style="color:var(--accent)">…</span> 👋</div>
-    <div class="page-subtitle" id="overviewSubtitle">Voici l'état de votre patrimoine aujourd'hui.</div>
-  </div>
+
 
   <div class="total-banner">
     <div style="flex:1">
@@ -1186,13 +1183,39 @@
   </div>
 </div>
 
+<!-- MODAL EDIT POSITION -->
+<div class="modal-overlay" id="editPositionModal" onclick="if(event.target===this)closeEditPosition()">
+  <div class="modal">
+    <div style="margin-bottom:20px">
+      <div style="font-size:1rem;font-weight:700;color:var(--text)" id="editPosTitle">Modifier la position</div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:2px" id="editPosSubtitle"></div>
+    </div>
+
+    <div class="form-row">
+      <label>Quantité</label>
+      <input type="number" id="edit-pos-qty" step="any" min="0">
+    </div>
+
+    <div class="form-row">
+      <label>PRU — Prix de Revient Unitaire (€)</label>
+      <input type="number" id="edit-pos-price" step="any" min="0">
+      <div class="form-hint">Laisser à 0 si le PRU est inconnu</div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn" onclick="closeEditPosition()">Annuler</button>
+      <button class="btn btn-primary" onclick="confirmEditPosition()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- CHIEN MASCOTTE -->
 <div class="dog-widget" id="dogWidget" style="display:none" onclick="dogClick()">
   <div id="dogBubble" class="dog-welcome-bubble" style="display:none"></div>
   <div id="wafBubble" style="position:relative;width:0;height:0"></div>
   <div class="dog-svg-wrap" id="dogSvgWrap">
     <img src="https://i.ibb.co/zWFYbp6w/chien-shiba-qui-court-heureux-isole-fond-transparent-png-699917-6816-removebg-preview.png"
-         width="110" height="110"
+         width="80" height="80"
          style="object-fit:contain;display:block;filter:drop-shadow(0 4px 16px rgba(0,0,0,0.35))"
          alt="Shiba">
   </div>
@@ -1337,23 +1360,6 @@ function updateUserUI(user) {
   document.getElementById('userDisplayName').textContent = displayName;
   document.getElementById('userEmailDisplay').textContent = email;
 
-  // Greeting
-  const greetEl = document.getElementById('overviewGreetName');
-  if (greetEl) greetEl.textContent = displayName;
-
-  // Sous-titre dynamique selon l'heure
-  const h = new Date().getHours();
-  const subtitles = [
-    { min: 5,  max: 12, text: 'Bonne matinée — voici l\'état de votre patrimoine.' },
-    { min: 12, max: 14, text: 'Pause déjeuner bien méritée — voici où en est votre patrimoine.' },
-    { min: 14, max: 18, text: 'Bonne après-midi — voici l\'état de votre patrimoine.' },
-    { min: 18, max: 22, text: 'Bonne soirée — voici l\'état de votre patrimoine.' },
-    { min: 22, max: 24, text: 'Encore debout ? Voici l\'état de votre patrimoine.' },
-    { min: 0,  max: 5,  text: 'Il est tard… voici l\'état de votre patrimoine.' },
-  ];
-  const sub = subtitles.find(s => h >= s.min && h < s.max);
-  const subEl = document.getElementById('overviewSubtitle');
-  if (subEl && sub) subEl.textContent = sub.text;
 }
 
 // ─── DB LOAD ──────────────────────────────────────────────────────────────────
@@ -2118,7 +2124,7 @@ function renderPositions() {
       <td class="pnl">${pnlDisplay}</td>
       <td>${pctDisplay}</td>
       <td>${sparklineSVG(hist,sparkColor)}</td>
-      <td><button class="del-btn" onclick="deletePosition('${p.id}')">✕</button></td>
+      <td style="display:flex;gap:6px;align-items:center"><button class="del-btn" style="background:rgba(0,229,160,0.08);color:var(--accent);border-color:rgba(0,229,160,0.2)" onclick="openEditPosition('${p.id}')">✏️</button><button class="del-btn" onclick="deletePosition('${p.id}')">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -2983,31 +2989,19 @@ function showDog(user) {
   widget.style.display = 'flex';
   svgWrap.className = 'dog-svg-wrap'; // reset, bounce in
 
-  // Calcul recap patrimoine — même logique que renderSummary (exclut livrets + price=0)
-  const total = computeCurrentPatrimoine(); // respecte les filtres actifs pour l'affichage
-  const positionsWithPRU = positions.filter(p => p.price > 0);
-  const cost = positionsWithPRU.reduce((s,p) => s + p.price * p.qty, 0);
-  const posVal = positionsWithPRU.reduce((s,p) => s + p.current * p.qty, 0);
-  const pnl = posVal - cost;
   const name = (user.email || '').split('@')[0];
   const displayName = name.charAt(0).toUpperCase() + name.slice(1);
-
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir';
 
-  const pnlStr = cost > 0
-    ? (pnl >= 0
-      ? `<strong style="color:var(--gain)">+${fmtEur(pnl)}</strong>`
-      : `<strong style="color:var(--loss)">${fmtEur(pnl)}</strong>`)
-    : '<strong>—</strong>';
-
-  bubble.innerHTML = `
-    <div class="dog-bubble-name">🐾 ${greeting}, <span>${displayName}</span> !</div>
-    <div class="dog-bubble-stat">
-      Patrimoine : <strong>${fmtEur(total)}</strong><br>
-      Plus-value : ${pnlStr}<br>
-      ${positions.length} position${positions.length > 1 ? 's' : ''} active${positions.length > 1 ? 's' : ''}
-    </div>`;
+  const dogGreetings = [
+    `🐾 ${greeting}, <span>${displayName}</span> ! Content de te voir !`,
+    `🌟 ${greeting} <span>${displayName}</span> ! Prêt pour une belle journée ?`,
+    `🐕 ${greeting}, <span>${displayName}</span> ! Je veille sur tes finances !`,
+    `🎀 ${greeting} <span>${displayName}</span> ~ bonne journée à toi !`,
+  ];
+  const randomGreet = dogGreetings[Math.floor(Math.random() * dogGreetings.length)];
+  bubble.innerHTML = `<div class="dog-bubble-name">${randomGreet}</div>`;
   bubble.style.display = 'block';
   bubble.className = 'dog-welcome-bubble';
 
@@ -3593,6 +3587,43 @@ function simDrawTable() {
   }).join('');
 }
 
+
+// ─── EDIT POSITION ────────────────────────────────────────────────────────────
+let editingPositionId = null;
+
+function openEditPosition(id) {
+  const p = positions.find(p => p.id === id);
+  if (!p) return;
+  editingPositionId = id;
+  document.getElementById('editPosTitle').textContent = p.symbol + (p.name ? ' — ' + p.name : '');
+  document.getElementById('editPosSubtitle').textContent = getAccountName(p.accountId);
+  document.getElementById('edit-pos-qty').value = p.qty;
+  document.getElementById('edit-pos-price').value = p.price > 0 ? p.price : '';
+  const overlay = document.getElementById('editPositionModal');
+  overlay.style.opacity = '1';
+  overlay.style.pointerEvents = 'auto';
+}
+
+function closeEditPosition() {
+  editingPositionId = null;
+  const overlay = document.getElementById('editPositionModal');
+  overlay.style.opacity = '0';
+  overlay.style.pointerEvents = 'none';
+}
+
+async function confirmEditPosition() {
+  const p = positions.find(p => p.id === editingPositionId);
+  if (!p) return;
+  const qty = parseFloat(document.getElementById('edit-pos-qty').value);
+  const price = parseFloat(document.getElementById('edit-pos-price').value) || 0;
+  if (!qty || qty <= 0) return alert('Quantité invalide');
+  p.qty = parseFloat(qty.toFixed(8));
+  p.price = parseFloat(price.toFixed(10));
+  await savePositions();
+  closeEditPosition();
+  renderAll();
+  showToast('✅ Position mise à jour');
+}
 </script>
 
 </div><!-- end .app -->
