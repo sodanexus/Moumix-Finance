@@ -514,7 +514,7 @@ window.onerror = function(message, source, lineno, colno, error) {
     b.textContent = '⚠️ Une erreur est survenue — rechargez la page si l\'app ne répond plus.';
     b.classList.remove('warn');
     b.classList.remove('hidden');
-    setTimeout(() => b.classList.add('hidden'), 8000);
+    setTimeout(() => b.classList.add('hidden'), TIMING_BANNER_AUTO);
   }
   return false; // false = le navigateur logue aussi dans sa console
 };
@@ -599,6 +599,22 @@ function switchTab(name, btn) {
     if (name === 'news') { loadNews(); loadNewsIndices(); }
   }, current ? 160 : 0);
 }
+
+
+// ─── ANIMATION TIMING CONSTANTS ─────────────────────────────────────────────────────────────────────────────────────
+const TIMING_TOAST_CLOSE     = 5000; // durée affichage toast
+const TIMING_TOAST_FADE      = 300;  // durée fade-out toast
+const TIMING_BANNER_AUTO     = 8000; // durée affichage banner erreur
+const TIMING_DOG_BUBBLE      = 6000; // durée bulle du chien
+const TIMING_DOG_WAF         = 1800; // durée bulle "waf"
+const TIMING_DOG_WAF_FADE    = 300;  // durée fade-out waf
+const TIMING_DOG_SHOW        = 400;  // délai apparition chien au login
+const TIMING_INDEX_UPDATE    = 400;  // durée animation index pill
+const TIMING_RESIZE_DEBOUNCE = 80;   // debounce resize
+const TIMING_SIM_DEBOUNCE    = 80;   // debounce simulateur
+const TIMING_TICKER_SEARCH   = 300;  // debounce recherche ticker
+const TIMING_LIVRET_FOCUS    = 50;   // délai focus input livret
+const TIMING_SDK_INIT        = 800;  // attente init SDK Supabase au boot
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 let authTab = 'login';
@@ -733,62 +749,78 @@ async function loadAllData() {
 // ─── DB SAVE ──────────────────────────────────────────────────────────────────
 async function saveAccounts() {
   const uid = currentUser.id;
-  if (accounts.length > 0) {
-    const { error } = await sb.from('accounts').upsert(accounts.map(a => ({
-      id: a.id, user_id: uid, name: a.name, type: a.type, solde: a.solde ?? null
-    })));
-    if (error) { showToast('⚠️ Erreur sauvegarde comptes'); console.error(error); return false; }
-  }
-  // Sync deletions: remove from DB any account not in local state (works even when accounts=[])
-  const { data: dbAccounts } = await sb.from('accounts').select('id').eq('user_id', uid);
-  if (dbAccounts) {
-    const localIds = new Set(accounts.map(a => a.id));
-    const toDelete = dbAccounts.filter(a => !localIds.has(a.id)).map(a => a.id);
-    if (toDelete.length > 0) {
-      await sb.from('accounts').delete().in('id', toDelete).eq('user_id', uid);
+  try {
+    if (accounts.length > 0) {
+      const { error } = await sb.from('accounts').upsert(accounts.map(a => ({
+        id: a.id, user_id: uid, name: a.name, type: a.type, solde: a.solde ?? null
+      })));
+      if (error) { showToast('⚠️ Erreur sauvegarde comptes'); console.error(error); return false; }
     }
+    // Sync deletions: remove from DB any account not in local state (works even when accounts=[])
+    const { data: dbAccounts } = await sb.from('accounts').select('id').eq('user_id', uid);
+    if (dbAccounts) {
+      const localIds = new Set(accounts.map(a => a.id));
+      const toDelete = dbAccounts.filter(a => !localIds.has(a.id)).map(a => a.id);
+      if (toDelete.length > 0) {
+        await sb.from('accounts').delete().in('id', toDelete).eq('user_id', uid);
+      }
+    }
+    return true;
+  } catch(e) {
+    console.error('[Moumix] saveAccounts error:', e);
+    showToast('Erreur : impossible de sauvegarder les comptes.', 'error');
+    return false;
   }
-  return true;
 }
 
 async function savePositions() {
   const uid = currentUser.id;
-  if (positions.length > 0) {
-    const { error } = await sb.from('positions').upsert(positions.map(p => ({
-      id: p.id, user_id: uid, symbol: p.symbol, name: p.name,
-      exchange: p.exchange || '', currency: p.currency || 'EUR',
-      account_id: p.accountId, qty: p.qty, price: p.price,
-      current: p.current || 0, change: p.change ?? null,
-      change_percent: p.changePercent ?? null, last_updated: p.lastUpdated ?? null
-    })));
-    if (error) { showToast('⚠️ Erreur sauvegarde positions'); console.error(error); return; }
-  }
-  const { data: dbPositions } = await sb.from('positions').select('id').eq('user_id', uid);
-  if (dbPositions) {
-    const localIds = new Set(positions.map(p => p.id));
-    const toDelete = dbPositions.filter(p => !localIds.has(p.id)).map(p => p.id);
-    if (toDelete.length > 0) {
-      await sb.from('positions').delete().in('id', toDelete).eq('user_id', uid);
+  try {
+    if (positions.length > 0) {
+      const { error } = await sb.from('positions').upsert(positions.map(p => ({
+        id: p.id, user_id: uid, symbol: p.symbol, name: p.name,
+        exchange: p.exchange || '', currency: p.currency || 'EUR',
+        account_id: p.accountId, qty: p.qty, price: p.price,
+        current: p.current || 0, change: p.change ?? null,
+        change_percent: p.changePercent ?? null, last_updated: p.lastUpdated ?? null
+      })));
+      if (error) { showToast('⚠️ Erreur sauvegarde positions'); console.error(error); return; }
     }
+    const { data: dbPositions } = await sb.from('positions').select('id').eq('user_id', uid);
+    if (dbPositions) {
+      const localIds = new Set(positions.map(p => p.id));
+      const toDelete = dbPositions.filter(p => !localIds.has(p.id)).map(p => p.id);
+      if (toDelete.length > 0) {
+        await sb.from('positions').delete().in('id', toDelete).eq('user_id', uid);
+      }
+    }
+  } catch(e) {
+    console.error('[Moumix] savePositions error:', e);
+    showToast('Erreur : impossible de sauvegarder les positions.', 'error');
   }
 }
 
 async function savePrelevements() {
   const uid = currentUser.id;
-  if (prelevements.length > 0) {
-    const { error } = await sb.from('prelevements').upsert(prelevements.map(p => ({
-      id: p.id, user_id: uid, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat,
-      split: p.split || 1
-    })));
-    if (error) { showToast('⚠️ Erreur sauvegarde prélèvements'); console.error(error); return; }
-  }
-  const { data: dbPrel } = await sb.from('prelevements').select('id').eq('user_id', uid);
-  if (dbPrel) {
-    const localIds = new Set(prelevements.map(p => p.id));
-    const toDelete = dbPrel.filter(p => !localIds.has(p.id)).map(p => p.id);
-    if (toDelete.length > 0) {
-      await sb.from('prelevements').delete().in('id', toDelete).eq('user_id', uid);
+  try {
+    if (prelevements.length > 0) {
+      const { error } = await sb.from('prelevements').upsert(prelevements.map(p => ({
+        id: p.id, user_id: uid, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat,
+        split: p.split || 1
+      })));
+      if (error) { showToast('⚠️ Erreur sauvegarde prélèvements'); console.error(error); return; }
     }
+    const { data: dbPrel } = await sb.from('prelevements').select('id').eq('user_id', uid);
+    if (dbPrel) {
+      const localIds = new Set(prelevements.map(p => p.id));
+      const toDelete = dbPrel.filter(p => !localIds.has(p.id)).map(p => p.id);
+      if (toDelete.length > 0) {
+        await sb.from('prelevements').delete().in('id', toDelete).eq('user_id', uid);
+      }
+    }
+  } catch(e) {
+    console.error('[Moumix] savePrelevements error:', e);
+    showToast('Erreur : impossible de sauvegarder les prélèvements.', 'error');
   }
 }
 
@@ -823,13 +855,16 @@ async function savePatrimoineHistory() {
 }
 
 async function deleteAccountDB(id) {
-  await sb.from('accounts').delete().eq('id', id).eq('user_id', currentUser.id);
+  try { await sb.from('accounts').delete().eq('id', id).eq('user_id', currentUser.id); }
+  catch(e) { console.error('[Moumix] deleteAccountDB error:', e); showToast('Erreur : suppression compte impossible.', 'error'); }
 }
 async function deletePositionDB(id) {
-  await sb.from('positions').delete().eq('id', id).eq('user_id', currentUser.id);
+  try { await sb.from('positions').delete().eq('id', id).eq('user_id', currentUser.id); }
+  catch(e) { console.error('[Moumix] deletePositionDB error:', e); showToast('Erreur : suppression position impossible.', 'error'); }
 }
 async function deletePrelDB(id) {
-  await sb.from('prelevements').delete().eq('id', id).eq('user_id', currentUser.id);
+  try { await sb.from('prelevements').delete().eq('id', id).eq('user_id', currentUser.id); }
+  catch(e) { console.error('[Moumix] deletePrelDB error:', e); showToast('Erreur : suppression prélèvement impossible.', 'error'); }
 }
 
 // ─── YAHOO FINANCE API (via proxy CORS) ──────────────────────────────────────
@@ -962,12 +997,12 @@ function onTickerInput(val) {
   const seq = ++tickerSearchSeq;
   const query = val;
 
-  searchTimeout = setTimeout(async () => {
+  searchTimeout = setTimeout(async () => { // délai = TIMING_TICKER_SEARCH (300ms)
     try {
       // Timeout agressif de 3s pour éviter que l'UI se fige si les proxies traînent
       const raceResult = await Promise.race([
         searchTickers(query, seq),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)) // 3s abort ticker search
       ]);
       if (seq !== tickerSearchSeq) return; // une nouvelle recherche a été lancée
       if (!raceResult || raceResult.length === 0) {
@@ -1139,7 +1174,7 @@ function showOfflineBanner(msg, type = 'error') {
   b.className = type === 'warn' ? 'warn' : '';
   b.classList.remove('hidden');
   if (type === 'warn') {
-    setTimeout(() => { b.classList.add('hidden'); }, 5000);
+    setTimeout(() => b.classList.add('hidden'), TIMING_TOAST_CLOSE);
   }
 }
 function hideOfflineBanner() {
@@ -1241,7 +1276,8 @@ async function confirmPosition() {
     }
     const tx = { id: crypto.randomUUID(), type: 'buy', symbol: selectedTicker.symbol, name: selectedTicker.name, qty, price: pru, accountName: accName, ts: Date.now() };
     transactions.unshift(tx);
-    await Promise.all([savePositions(), saveTransaction(tx)]);
+    try { await Promise.all([savePositions(), saveTransaction(tx)]); }
+    catch(e) { console.error('[Moumix] confirmPosition buy error:', e); showToast('Erreur sauvegarde achat.', 'error'); }
   } else {
     const existing = positions.find(p => p.symbol === selectedTicker.symbol && p.accountId === accountId);
     if (!existing) return alert('Position introuvable');
@@ -1257,7 +1293,8 @@ async function confirmPosition() {
       existing.qty = parseFloat((existing.qty - qty).toFixed(8));
       await savePositions();
     }
-    await saveTransaction(tx);
+    try { await saveTransaction(tx); }
+    catch(e) { console.error('[Moumix] confirmPosition sell error:', e); showToast('Erreur sauvegarde vente.', 'error'); }
   }
   closeModal('position'); renderAll();
 }
@@ -1267,7 +1304,7 @@ async function deletePosition(id) {
   const p = positions.find(p => p.id === id);
   if (!p) return;
   if (!confirm(`Supprimer la position ${p.symbol} (${p.qty} titre${p.qty > 1 ? 's' : ''}) ?`)) return;
-  await deletePositionDB(id);
+  try { await deletePositionDB(id); } catch(e) { console.error('[Moumix] deletePosition error:', e); showToast('Erreur : suppression impossible.', 'error'); return; }
   delete positionHistory[id];
   positions = positions.filter(p => p.id !== id);
   renderPositions(); renderAllocation(); renderByAccount(); renderSummary();
@@ -1287,7 +1324,7 @@ async function deleteAccount(id) {
     delete positionHistory[p.id];
   }
   positions = positions.filter(p => p.accountId !== id);
-  await deleteAccountDB(id);
+  try { await deleteAccountDB(id); } catch(e) { console.error('[Moumix] deleteAccount error:', e); showToast('Erreur : suppression compte impossible.', 'error'); return; }
   accounts = accounts.filter(a => a.id !== id);
   renderPositions(); renderAccounts(); renderAllocation(); renderByAccount(); renderSummary(); renderFilterToggles();
 }
@@ -1295,7 +1332,7 @@ function editLivretSolde(id) {
   const editDiv = document.getElementById('livret-edit-' + id);
   const input = document.getElementById('livret-input-' + id);
   editDiv.classList.remove('hidden');
-  setTimeout(() => { input.focus(); input.select(); }, 50);
+  setTimeout(() => { input.focus(); input.select(); }, TIMING_LIVRET_FOCUS);
 }
 function cancelLivretEdit(id) {
   document.getElementById('livret-edit-' + id).classList.add('hidden');
@@ -1362,8 +1399,7 @@ if (btn) {
       return p;
     });
 
-    await savePositions();
-    await snapshotPatrimoine();
+    await Promise.all([savePositions(), snapshotPatrimoine()]); // parallelise
     const now = new Date();
     if (badge) badge.textContent = `Actualisé à ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     renderAll();
@@ -1647,7 +1683,7 @@ function renderByAccount() {
 
   const maxAbsPct = Math.max(...ranked.map(p => Math.abs(p.pnlPct)), 1);
 
-  function row(p, isFlop) {
+  function renderTopFlopRow(p, isFlop) {
     const gain = p.pnlPct >= 0;
     const color = gain ? 'var(--gain)' : 'var(--loss)';
     const barColor = gain ? 'rgba(0,229,160,0.15)' : 'rgba(255,68,102,0.12)';
@@ -1677,11 +1713,11 @@ function renderByAccount() {
   let html = '';
   if (top.length) {
     html += `<div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gain);margin-bottom:6px;font-weight:600">▲ Meilleures</div>`;
-    html += top.map(p => row(p, false)).join('');
+    html += top.map(p => renderTopFlopRow(p, false)).join('');
   }
   if (flop.length) {
     html += `<div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--loss);margin:${top.length?'14px':0} 0 6px;font-weight:600">▼ À surveiller</div>`;
-    html += flop.map(p => row(p, true)).join('');
+    html += flop.map(p => renderTopFlopRow(p, true)).join('');
   }
 
   el.innerHTML = html;
@@ -1790,7 +1826,7 @@ function showToast(msg, type = 'error') {
   toast._t = setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(-50%) translateY(8px)';
-    setTimeout(() => toast.remove(), 300);
+    setTimeout(() => toast.remove(), TIMING_TOAST_FADE);
   }, ok ? 2500 : 4000);
 }
 
@@ -1800,14 +1836,19 @@ let selectedGoalEmoji = '🏠';
 
 async function persistGoals(goal, isDelete = false) {
   if (!currentUser) return;
-  if (isDelete) {
-    await sb.from('goals').delete().eq('id', goal.id).eq('user_id', currentUser.id);
-  } else {
-    await sb.from('goals').upsert({
-      id: goal.id, user_id: currentUser.id,
-      name: goal.name, target: goal.target,
-      current: goal.current, emoji: goal.emoji
-    });
+  try {
+    if (isDelete) {
+      await sb.from('goals').delete().eq('id', goal.id).eq('user_id', currentUser.id);
+    } else {
+      await sb.from('goals').upsert({
+        id: goal.id, user_id: currentUser.id,
+        name: goal.name, target: goal.target,
+        current: goal.current, emoji: goal.emoji
+      });
+    }
+  } catch(e) {
+    console.error('[Moumix] persistGoals error:', e);
+    showToast('Erreur : impossible de sauvegarder l\'objectif.', 'error');
   }
 }
 
@@ -2361,10 +2402,11 @@ async function confirmAddPrel() {
   const split = splitRaw >= 2 ? splitRaw : 1;
   if (!name || !amount) return alert('Nom et montant requis');
   prelevements.push({ id: crypto.randomUUID(), name, amount, freq, cat, split });
-  await savePrelevements(); cancelAddPrel(); renderPrelevements();
+  try { await savePrelevements(); } catch(e) { console.error('[Moumix] confirmAddPrel error:', e); showToast('Erreur : impossible d\'ajouter.', 'error'); }
+  cancelAddPrel(); renderPrelevements();
 }
 async function deletePrel(id) {
-  await deletePrelDB(id);
+  try { await deletePrelDB(id); } catch(e) { console.error('[Moumix] deletePrel error:', e); showToast('Erreur : suppression impossible.', 'error'); return; }
   prelevements = prelevements.filter(p => p.id !== id);
   renderPrelevements();
 }
@@ -2404,7 +2446,8 @@ async function confirmEditPrel(id) {
   p.cat = document.getElementById('prel-edit-cat-' + id).value;
   const splitRaw = parseInt(document.getElementById('prel-edit-split-' + id).value);
   p.split = splitRaw >= 2 ? splitRaw : 1;
-  await savePrelevements(); renderPrelevements();
+  try { await savePrelevements(); } catch(e) { console.error('[Moumix] confirmEditPrel error:', e); showToast('Erreur modification.', 'error'); }
+  renderPrelevements();
 }
 function renderPrelevements() {
   const el = document.getElementById('prelList');
@@ -2527,14 +2570,14 @@ function showDog(user) {
 
   // Bulle disparaît après 6s
   clearTimeout(dogBubbleTimer);
-  dogBubbleTimer = setTimeout(() => {
+  dogBubbleTimer = setTimeout(() => { // TIMING_DOG_BUBBLE
     bubble.classList.add('hiding');
     setTimeout(() => {
       bubble.classList.add('hidden');
       bubble.classList.remove('hiding');
       svgWrap.className = 'dog-svg-wrap idle';
     }, 300);
-  }, 6000);
+  }, TIMING_DOG_BUBBLE);
 }
 
 const DOG_PHRASES = [
@@ -2574,14 +2617,14 @@ function dogClick() {
     const waf = wafContainer.querySelector('.waf-bubble');
     if (waf) {
       waf.classList.add('fade');
-      setTimeout(() => { wafContainer.innerHTML = ''; }, 300);
+      setTimeout(() => { wafContainer.innerHTML = ''; }, TIMING_DOG_WAF_FADE);
     }
-  }, 1800);
+  }, TIMING_DOG_WAF);
 
   setTimeout(() => {
     svgWrap.classList.remove('shaking');
     svgWrap.classList.add('idle');
-  }, 500);
+  }, 500); // dog shake duration
 }
 
 
@@ -2650,7 +2693,7 @@ document.addEventListener('click', e => {
   r.style.left = (e.clientX - rect.left) + 'px';
   r.style.top  = (e.clientY - rect.top)  + 'px';
   btn.appendChild(r);
-  setTimeout(() => r.remove(), 500);
+  setTimeout(() => r.remove(), TIMING_TOAST_FADE + 200); // ~500ms ripple
 });
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function initApp(user) {
@@ -2666,7 +2709,7 @@ async function initApp(user) {
       showOfflineBanner('⏱ Supabase ne répond pas — nouvelles tentative…', 'warn');
       // Réessaie une fois après 1s supplémentaire
       try {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1000)); // attente 1s avant retry Supabase
         await loadAllData();
         hideOfflineBanner();
       } catch(e2) {
@@ -2693,7 +2736,7 @@ async function initApp(user) {
   fetchEurUsd();
   clearInterval(_eurUsdInterval);
   _eurUsdInterval = setInterval(fetchEurUsd, 5 * 60 * 1000);
-  setTimeout(() => showDog(user), 400);
+  setTimeout(() => showDog(user), TIMING_DOG_SHOW);
   if (positions.length > 0) refreshAllPrices();
   clearInterval(_priceRefreshInterval);
   _priceRefreshInterval = setInterval(() => { if (positions.length > 0 && document.visibilityState === 'visible') refreshAllPrices(); }, 5 * 60 * 1000);
@@ -2734,7 +2777,7 @@ sb.auth.onAuthStateChange((event, session) => {
 // On attend que le SDK ait fini son init complète avant d'appeler getSession
 window.addEventListener('load', async () => {
   // Laisse le SDK terminer _initialize / _recoverAndRefresh
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise(r => setTimeout(r, TIMING_SDK_INIT));
   simUpdate(); // initialise le simulateur dès le chargement
   try {
     const { data: { session } } = await sb.auth.getSession();
@@ -2749,7 +2792,7 @@ window.addEventListener('load', async () => {
 });
 // ─── RESIZE & RESPONSIVE ─────────────────────────────────────────────────────
 function _debouncedRedraw(fn) {
-  let t; return () => { clearTimeout(t); t = setTimeout(fn, 80); };
+  let t; return () => { clearTimeout(t); t = setTimeout(fn, TIMING_RESIZE_DEBOUNCE); };
 }
 // ResizeObserver pour les charts — réagit aussi quand un tab devient visible
 if (window.ResizeObserver) {
@@ -2858,7 +2901,7 @@ async function loadNewsIndices() {
         const priceStr = price > 1000 ? Math.round(price).toLocaleString('fr-FR') : price.toFixed(2);
         el2.innerHTML = `<span style="font-size:0.75rem">${priceStr}</span> ${changeHtml}`;
         el2.classList.add('updated');
-        setTimeout(() => el2.classList.remove('updated'), 400);
+        setTimeout(() => el2.classList.remove('updated'), TIMING_INDEX_UPDATE);
       }
     } catch(e) {}
   }));
@@ -2967,7 +3010,7 @@ function simComputeForRate(initial, monthly, years, rate) {
 let _simUpdateTimer = null;
 function simUpdateDebounced() {
   clearTimeout(_simUpdateTimer);
-  _simUpdateTimer = setTimeout(simUpdate, 80);
+  _simUpdateTimer = setTimeout(simUpdate, TIMING_SIM_DEBOUNCE);
 }
 
 function simUpdate() {
@@ -3257,7 +3300,8 @@ async function confirmEditPosition() {
   const accName = getAccountName(p.accountId);
   const tx = { id: crypto.randomUUID(), type: 'edit', symbol: p.symbol, name: p.name, qty: p.qty, price: p.price, oldQty, oldPrice, accountName: accName, ts: Date.now() };
   transactions.unshift(tx);
-  await Promise.all([savePositions(), saveTransaction(tx)]);
+  try { await Promise.all([savePositions(), saveTransaction(tx)]); }
+  catch(e) { console.error('[Moumix] confirmEditPosition error:', e); showToast('Erreur sauvegarde modification.', 'error'); }
   closeEditPosition();
   renderPositions(); renderAllocation(); renderByAccount(); renderSummary();
   showToast('✅ Position mise à jour', 'success');
@@ -3637,7 +3681,7 @@ async function saveHistoryImport() {
 
     statusEl.style.color = 'var(--gain)';
     statusEl.textContent = `✓ ${toUpsert.length} entrée(s) enregistrée(s) avec succès !`;
-    setTimeout(() => closeHistoryImport(), 1800);
+    setTimeout(() => closeHistoryImport(), TIMING_DOG_WAF); // réutilise 1800ms
   } catch (err) {
     statusEl.style.color = 'var(--loss)';
     statusEl.textContent = '✗ Erreur : ' + (err.message || err);
