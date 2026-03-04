@@ -594,6 +594,8 @@ let selectedTicker = null;
 let searchTimeout = null;
 let suggestionsIndex = -1;
 let tickerSearchSeq = 0;
+let _mobileRowData = {};      // données mobile des lignes de position
+let _tickerSuggestions = [];  // suggestions ticker courantes (évite les attributs HTML encodés)
 let currentChartPeriod = '1S';
 let _eurUsdInterval = null;
 let _priceRefreshInterval = null;
@@ -649,7 +651,9 @@ function switchTab(name, btn) {
 
 
 // ─── ANIMATION TIMING CONSTANTS ─────────────────────────────────────────────────────────────────────────────────────
-const TIMING_TOAST_CLOSE     = 5000; // durée affichage toast
+const TIMING_TOAST_CLOSE     = 5000; // durée affichage toast (banner offline)
+const TIMING_TOAST_SUCCESS   = 2500; // durée toast succès
+const TIMING_TOAST_ERROR     = 4000; // durée toast erreur
 const TIMING_TOAST_FADE      = 300;  // durée fade-out toast
 const TIMING_BANNER_AUTO     = 8000; // durée affichage banner erreur
 const TIMING_DOG_BUBBLE      = 6000; // durée bulle du chien
@@ -663,6 +667,7 @@ const TIMING_TICKER_SEARCH   = 300;  // debounce recherche ticker
 const TIMING_LIVRET_FOCUS    = 50;   // délai focus input livret
 const TIMING_SDK_INIT        = 800;  // attente init SDK Supabase au boot
 const TIMING_HISTORY_CLOSE   = 1800; // délai auto-fermeture modale historique après import
+const TIMING_LOAD_TIMEOUT    = 8000; // timeout chargement des données Supabase
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 let authTab = 'login';
@@ -750,9 +755,8 @@ function updateUserUI(user) {
 async function loadAllData() {
   const uid = currentUser.id;
 
-  // Timeout de sécurité — si Supabase ne répond pas en 8s on abandonne
-  const timeoutMs = 8000;
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs));
+  // Timeout de sécurité — si Supabase ne répond pas en TIMING_LOAD_TIMEOUT on abandonne
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMING_LOAD_TIMEOUT));
   const [accRes, posRes, prelRes, txRes, histRes, goalsRes] = await Promise.race([
     Promise.all([sb.from('accounts').select('*').eq('user_id', uid).order('created_at'),
       sb.from('positions').select('*').eq('user_id', uid).order('created_at'),
@@ -1088,15 +1092,13 @@ function renderSuggestions(results) {
   const el = document.getElementById('tickerSuggestions');
   el.classList.remove('hidden');
   // Stocker dans une variable JS pour éviter l'encodage JSON dans les attributs HTML
-  window._tickerSuggestions = results;
+  _tickerSuggestions = results;
   el.innerHTML = results.map((r, i) => {
     const priceStr = r.priceEur != null ? fmtEur(r.priceEur) : (r.price != null ? `${fmt(r.price)} ${r.currency}` : '—');
-    const safeSym = r.symbol.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const safeName = r.name.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     return `<div class="ticker-suggestion" data-index="${i}" onclick="selectTickerByIndex(${i})">
       <div class="sug-left">
-        <div class="sug-sym">${safeSym}</div>
-        <div class="sug-name">${safeName}</div>
+        <div class="sug-sym">${_esc(r.symbol)}</div>
+        <div class="sug-name">${_esc(r.name)}</div>
       </div>
       <div class="sug-right">
         <div class="sug-price">${priceStr}</div>
@@ -1121,7 +1123,7 @@ function highlightSuggestion(items) {
 }
 
 function selectTickerByIndex(i) {
-  const r = (window._tickerSuggestions || [])[i];
+  const r = _tickerSuggestions[i];
   if (r) selectTicker(r);
 }
 
@@ -1445,11 +1447,12 @@ async function confirmLivretSolde(id) {
 
 // ─── REFRESH PRICES ───────────────────────────────────────────────────────────
 let _isRefreshing = false;
+let _lastPriceRefresh = 0; // timestamp du dernier refresh de prix
 async function refreshAllPrices() {
   if (positions.length === 0) return;
   if (_isRefreshing) return;
   _isRefreshing = true;
-  window._lastPriceRefresh = Date.now();
+  _lastPriceRefresh = Date.now();
   eurRates = {}; // invalider le cache des taux à chaque refresh pour ne pas utiliser des taux périmés
   const btn = document.getElementById('refreshBtn');
   const badge = document.getElementById('updateBadge');
@@ -1609,7 +1612,7 @@ function renderPositions() {
     : getSortedPositions();
   if (positions.length===0) { tbody.innerHTML='<tr><td colspan="11" class="empty-state">Aucune position — cliquez sur "+ Position"</td></tr>'; return; }
   if (filtered.length === 0 && q) { tbody.innerHTML='<tr><td colspan="11" class="empty-state">Aucune position ne correspond à "' + q + '"</td></tr>'; return; }
-  window._mobileRowData = {};
+  _mobileRowData = {};
   tbody.innerHTML = filtered.map((p, i) => {
     const value=p.current*p.qty;
     const pnl = p.price > 0 ? (p.current-p.price)*p.qty : null;
@@ -1627,7 +1630,7 @@ function renderPositions() {
     const priceDisplay = p.price > 0 ? fmtPrice(p.price) : `<span style="color:var(--muted)">—</span>`;
     const ago = p.lastUpdated ? timeAgo(p.lastUpdated) : '';
     // Stocker PRU et trend dans un store JS pour éviter tout problème d'échappement dans les attributs HTML
-    window._mobileRowData[p.id] = { pru: priceDisplay, trend: sparklineSVG(hist, sparkColor) };
+    _mobileRowData[p.id] = { pru: priceDisplay, trend: sparklineSVG(hist, sparkColor) };
     return `<tr style="animation:rowIn 0.3s ease ${i * 0.04}s both" onclick="toggleMobileRow(this,'${p.id}',event)" data-pid="${p.id}">
       <td><div class="ticker-sym">${_esc(p.symbol)}</div><div class="ticker-name">${_esc(p.name||'')}</div></td>
       <td style="font-size:0.75rem">${_esc(getAccountName(p.accountId))}</td>
@@ -1660,7 +1663,7 @@ function toggleMobileRow(tr, pid, e) {
   document.querySelectorAll('tr.mobile-expanded').forEach(r => r.classList.remove('mobile-expanded'));
   tr.classList.add('mobile-expanded');
   // Récupérer depuis le store JS
-  const rowData = (window._mobileRowData || {})[pid] || {};
+  const rowData = _mobileRowData[pid] || {};
   const pru = rowData.pru || '—';
   const trend = rowData.trend || '';
   const detail = document.createElement('tr');
@@ -1915,7 +1918,7 @@ function showToast(msg, type = 'error') {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(-50%) translateY(8px)';
     setTimeout(() => toast.remove(), TIMING_TOAST_FADE);
-  }, ok ? 2500 : 4000);
+  }, ok ? TIMING_TOAST_SUCCESS : TIMING_TOAST_ERROR);
 }
 
 // ─── OBJECTIFS D'ÉPARGNE ─────────────────────────────────────────────────────
@@ -2626,7 +2629,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && positions.length > 0) {
     // Si plus de 2 min depuis le dernier refresh, on relance
     const now = Date.now();
-    if (!window._lastPriceRefresh || now - window._lastPriceRefresh > 2 * 60 * 1000) {
+    if (now - _lastPriceRefresh > 2 * 60 * 1000) {
       refreshAllPrices();
     }
   }
@@ -3056,17 +3059,16 @@ function renderNewsFeed(items) {
   const feed = document.getElementById('newsFeed');
   if (!feed) return;
   if (!items.length) { feed.innerHTML = '<div class="empty-state">Aucune actualité trouvée.</div>'; return; }
-  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   feed.innerHTML = items.map((item, i) => `
-    <a class="news-card" href="${esc(item.link)}" target="_blank" rel="noopener"
+    <a class="news-card" href="${_esc(item.link)}" target="_blank" rel="noopener"
        style="animation:fadeInUp 0.3s ease ${i * 0.05}s both;text-decoration:none;color:inherit">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-          <span class="news-source-badge">${esc(item.source)}</span>
-          ${item.ago ? `<span style="font-size:0.62rem;color:var(--muted)">${esc(item.ago)}</span>` : ''}
+          <span class="news-source-badge">${_esc(item.source)}</span>
+          ${item.ago ? `<span style="font-size:0.62rem;color:var(--muted)">${_esc(item.ago)}</span>` : ''}
         </div>
-        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.88rem;line-height:1.4;margin-bottom:5px;color:var(--text)">${esc(item.title)}</div>
-        ${item.desc ? `<div style="font-size:0.74rem;color:var(--muted);line-height:1.5">${esc(item.desc)}…</div>` : ''}
+        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.88rem;line-height:1.4;margin-bottom:5px;color:var(--text)">${_esc(item.title)}</div>
+        ${item.desc ? `<div style="font-size:0.74rem;color:var(--muted);line-height:1.5">${_esc(item.desc)}…</div>` : ''}
       </div>
       <div style="flex-shrink:0;color:var(--muted);font-size:0.8rem;align-self:center">→</div>
     </a>`).join('');
@@ -3125,10 +3127,6 @@ function simUpdate() {
   const years = parseInt(document.getElementById('sim-years').value) || 1;
   const rate = parseFloat(document.getElementById('sim-rate').value) || 0;
 
-  const _sid = document.getElementById('sim-initial-display'); if (_sid) _sid.textContent = simFmt(initial);
-  const _smd = document.getElementById('sim-monthly-display'); if (_smd) _smd.textContent = simFmt(monthly);
-  const _syd = document.getElementById('sim-years-display'); if (_syd) _syd.textContent = years + ' an' + (years > 1 ? 's' : '');
-  const _srd = document.getElementById('sim-rate-display'); if (_srd) _srd.textContent = simPct(rate);
 
   // 3 scénarios : ±3% autour du taux réaliste
   const ratePess = Math.max(0, rate - 3);
