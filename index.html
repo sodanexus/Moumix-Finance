@@ -646,9 +646,8 @@ function switchTab(name, btn) {
       });
     }
     if (name === 'news') { loadNews(); loadNewsIndices(); }
-  }, current ? 160 : 0);
+  }, current ? TIMING_TAB_TRANSITION : 0);
 }
-
 
 // ─── ANIMATION TIMING CONSTANTS ─────────────────────────────────────────────────────────────────────────────────────
 const TIMING_TOAST_CLOSE     = 5000; // durée affichage toast (banner offline)
@@ -664,10 +663,14 @@ const TIMING_INDEX_UPDATE    = 400;  // durée animation index pill
 const TIMING_RESIZE_DEBOUNCE = 80;   // debounce resize
 const TIMING_SIM_DEBOUNCE    = 80;   // debounce simulateur
 const TIMING_TICKER_SEARCH   = 300;  // debounce recherche ticker
+const TIMING_TICKER_TIMEOUT  = 3000; // timeout abort recherche ticker
 const TIMING_LIVRET_FOCUS    = 50;   // délai focus input livret
 const TIMING_SDK_INIT        = 800;  // attente init SDK Supabase au boot
 const TIMING_HISTORY_CLOSE   = 1800; // délai auto-fermeture modale historique après import
+const TIMING_TAB_TRANSITION  = 160;  // durée animation sortie d'onglet avant affichage suivant
 const TIMING_LOAD_TIMEOUT    = 8000; // timeout chargement des données Supabase
+const TIMING_SUPABASE_RETRY  = 1000; // délai avant retry Supabase après timeout
+const TIMING_PROXY_FETCH     = 5000; // timeout fetch via proxy CORS (Yahoo Finance & RSS)
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 let authTab = 'login';
@@ -890,7 +893,8 @@ async function saveTransaction(tx) {
   if (tx.oldQty  !== undefined) row.old_qty   = tx.oldQty;
   if (tx.oldPrice !== undefined) row.old_price = tx.oldPrice;
   try {
-    await sb.from('transactions').insert(row);
+    const { error } = await sb.from('transactions').insert(row);
+    if (error) { console.error('[Moumix] saveTransaction error:', error); showToast('Erreur : impossible d\'enregistrer la transaction.', 'error'); }
   } catch(e) {
     console.error('[Moumix] saveTransaction error:', e);
     showToast('Erreur : impossible d\'enregistrer la transaction.', 'error');
@@ -902,9 +906,10 @@ async function savePatrimoineHistory() {
   const last = patrimoineHistory[patrimoineHistory.length - 1];
   if (!last) return;
   try {
-    await sb.from('patrimoine_history').upsert({
+    const { error } = await sb.from('patrimoine_history').upsert({
       user_id: uid, date: last.date, value: last.value
     }, { onConflict: 'user_id,date' });
+    if (error) throw error;
   } catch(e) {
     console.error('[Moumix] savePatrimoineHistory error:', e);
     showToast('Erreur : impossible de sauvegarder l\'historique du patrimoine.', 'error');
@@ -939,7 +944,7 @@ async function yfFetch(path) {
   const url = YF_BASE + path;
   for (const proxy of CORS_PROXIES) {
     try {
-      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(TIMING_PROXY_FETCH) });
       if (!res.ok) continue;
       return await res.json();
     } catch(e) { continue; }
@@ -1058,7 +1063,7 @@ function onTickerInput(val) {
       // Timeout agressif de 3s pour éviter que l'UI se fige si les proxies traînent
       const raceResult = await Promise.race([
         searchTickers(val, seq),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)) // 3s abort ticker search
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMING_TICKER_TIMEOUT))
       ]);
       if (seq !== tickerSearchSeq) return; // une nouvelle recherche a été lancée
       if (!raceResult || raceResult.length === 0) {
@@ -1260,8 +1265,7 @@ function openModal(type) {
       o.value = a.id; o.textContent = `${a.name} · ${a.type}`; sel.appendChild(o);
     });
     // Reset complet
-    posSide = 'buy';
-    setPosSide('buy');
+    setPosSide('buy'); // setPosSide() assigne déjà posSide
     selectedTicker = null;
     document.getElementById('pos-ticker-input').value = '';
     document.getElementById('selectedTickerBox').classList.add('hidden');
@@ -1931,15 +1935,17 @@ async function persistGoals(goal, isDelete = false) {
     if (isDelete) {
       await sb.from('goals').delete().eq('id', goal.id).eq('user_id', currentUser.id);
     } else {
-      await sb.from('goals').upsert({
+      const { error } = await sb.from('goals').upsert({
         id: goal.id, user_id: currentUser.id,
         name: goal.name, target: goal.target,
         current: goal.current, emoji: goal.emoji
       });
+      if (error) throw error;
     }
   } catch(e) {
     console.error('[Moumix] persistGoals error:', e);
     showToast('Erreur : impossible de sauvegarder l\'objectif.', 'error');
+    throw e; // propager aux appelants (saveGoal, deleteGoal) pour rollback
   }
 }
 
@@ -1978,7 +1984,7 @@ async function saveGoal() {
   }
   try { await persistGoals(goal); } catch(e) {
     console.error('[Moumix] saveGoal error:', e);
-    showToast('Erreur : impossible de sauvegarder l\'objectif.', 'error');
+    if (!editId) goals.pop(); // rollback : retirer le goal non persisté
     return;
   }
   closeGoalModal();
@@ -2206,7 +2212,7 @@ function buildInterpolatedSeries(data, startDate, endDate) {
     const real = augmented.find(p => p.date === ds);
     if (real) { result.push({ date: ds, value: real.value, estimated: false }); continue; }
     // Find surrounding real points
-    const before = [...augmented].reverse().find(p => p.date < ds);
+    const before = augmented.findLast(p => p.date < ds); // évite la copie inutile de reverse()
     const after = augmented.find(p => p.date > ds);
     if (before && after) {
       const t0 = new Date(before.date + 'T12:00:00Z').getTime();
@@ -2240,7 +2246,7 @@ function renderChart() {
 
   // Build interpolated series
   const today = new Date().toISOString().slice(0,10);
-  let startDate = rawData.length > 0 ? rawData[0].date : today;
+  const startDate = rawData.length > 0 ? rawData[0].date : today;
   const data = buildInterpolatedSeries(rawData, startDate, today);
   if (data.length < 2) {
     // Si un seul point (premier lancement aujourd'hui), afficher un état "début"
@@ -2261,8 +2267,7 @@ function renderChart() {
   }
 
   const hasEstimated = data.some(d => d.estimated);
-  const todayStr = new Date().toISOString().slice(0,10);
-  const todayAlreadyInRaw = rawData.some(d => d.date === todayStr);
+  const todayAlreadyInRaw = rawData.some(d => d.date === today); // today déjà défini plus haut
   const realCount = rawData.length + (todayAlreadyInRaw ? 0 : 1); // +1 for today if not already present
 
   const W = wrap.clientWidth || 800;
@@ -2818,7 +2823,7 @@ async function initApp(user) {
       showOfflineBanner('⏱ Supabase ne répond pas — nouvelles tentative…', 'warn');
       // Réessaie une fois après 1s supplémentaire
       try {
-        await new Promise(r => setTimeout(r, 1000)); // attente 1s avant retry Supabase
+        await new Promise(r => setTimeout(r, TIMING_SUPABASE_RETRY));
         await loadAllData();
         hideOfflineBanner();
       } catch(e2) {
@@ -2890,9 +2895,10 @@ window.addEventListener('load', async () => {
   simUpdate(); // initialise le simulateur dès le chargement
   try {
     const { data: { session } } = await sb.auth.getSession();
-    if (session?.user && !currentUser) {
+    if (session?.user) {
       await initApp(session.user);
-    } else if (!session) {
+    } else {
+      // session inexistant OU session sans user (token expiré, user supprimé…)
       showLogin();
     }
   } catch(e) {
@@ -2941,7 +2947,7 @@ const NEWS_FEEDS_FR = [
 async function fetchRSSWithProxy(feedUrl) {
   for (const proxy of CORS_PROXIES) {
     try {
-      const res = await fetch(proxy(feedUrl), { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(proxy(feedUrl), { signal: AbortSignal.timeout(TIMING_PROXY_FETCH) });
       if (!res.ok) continue;
       const text = await res.text();
       if (!text.includes('<item>') && !text.includes('<entry>')) continue;
@@ -3126,7 +3132,6 @@ function simUpdate() {
   const monthly = parseFloat(document.getElementById('sim-monthly').value) || 0;
   const years = parseInt(document.getElementById('sim-years').value) || 1;
   const rate = parseFloat(document.getElementById('sim-rate').value) || 0;
-
 
   // 3 scénarios : ±3% autour du taux réaliste
   const ratePess = Math.max(0, rate - 3);
@@ -3383,14 +3388,14 @@ function simTooltip3(e, year, pess, real, opti, invested) {
     const ch = document.getElementById('sim-crosshair');
     if (ch) {
       ch.style.opacity = '1';
-      document.getElementById('sim-ch-line').setAttribute('x1', xPos);
-      document.getElementById('sim-ch-line').setAttribute('x2', xPos);
-      document.getElementById('sim-ch-pess').setAttribute('cx', xPos);
-      document.getElementById('sim-ch-pess').setAttribute('cy', yPess);
-      document.getElementById('sim-ch-real').setAttribute('cx', xPos);
-      document.getElementById('sim-ch-real').setAttribute('cy', yReal);
-      document.getElementById('sim-ch-opti').setAttribute('cx', xPos);
-      document.getElementById('sim-ch-opti').setAttribute('cy', yOpti);
+      const chLine = document.getElementById('sim-ch-line');
+      chLine.setAttribute('x1', xPos); chLine.setAttribute('x2', xPos);
+      const chPess = document.getElementById('sim-ch-pess');
+      chPess.setAttribute('cx', xPos); chPess.setAttribute('cy', yPess);
+      const chReal = document.getElementById('sim-ch-real');
+      chReal.setAttribute('cx', xPos); chReal.setAttribute('cy', yReal);
+      const chOpti = document.getElementById('sim-ch-opti');
+      chOpti.setAttribute('cx', xPos); chOpti.setAttribute('cy', yOpti);
       const glowR = document.getElementById('sim-ch-real-glow');
       if (glowR) { glowR.setAttribute('cx', xPos); glowR.setAttribute('cy', yReal); }
     }
