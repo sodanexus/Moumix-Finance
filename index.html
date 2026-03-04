@@ -727,9 +727,14 @@ document.addEventListener('click', e => {
   }
 });
 async function signOut() {
-  await sb.auth.signOut();
-  // Nettoie les tokens Supabase du localStorage
-  Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
+  try {
+    await sb.auth.signOut();
+  } catch(e) {
+    console.error('[Moumix] signOut error:', e);
+  } finally {
+    // Nettoie les tokens Supabase du localStorage quoi qu'il arrive
+    Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
+  }
 }
 
 function updateUserUI(user) {
@@ -950,7 +955,7 @@ async function fetchEurRate(currency) {
     const d = await yfFetch(`/v8/finance/chart/EUR${currency}=X?interval=1d&range=1d`);
     const rate = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
     if (rate) { eurRates[currency] = rate; return rate; }
-  } catch(e) {}
+  } catch(e) { console.error('[Moumix] fetchEurRate error:', e); }
   return EUR_FALLBACKS[currency] || 1;
 }
 
@@ -1283,12 +1288,17 @@ async function addAccount() {
   if (!name) return alert('Veuillez saisir un nom');
   const solde = FIXED_ACCOUNT_TYPES.has(type) ? (parseFloat(document.getElementById('acc-solde').value) || 0) : null;
   if (solde !== null && solde < 0) return alert('Le solde ne peut pas être négatif');
-  accounts.push({ id: crypto.randomUUID(), name, type, solde });
-  // Si filteredTypes est déjà initialisé et que ce type est nouveau, l'activer automatiquement
-  if (filteredTypes && !filteredTypes.includes(type)) {
-    filteredTypes.push(type);
+  const _newAcc = { id: crypto.randomUUID(), name, type, solde };
+  accounts.push(_newAcc);
+  const _typeAdded = filteredTypes && !filteredTypes.includes(type);
+  if (_typeAdded) filteredTypes.push(type);
+  const saved = await saveAccounts();
+  if (saved === false) {
+    accounts = accounts.filter(a => a.id !== _newAcc.id);
+    if (_typeAdded) filteredTypes = filteredTypes.filter(t => t !== type);
+    showToast('Erreur : impossible de sauvegarder le compte.', 'error');
+    return;
   }
-  await saveAccounts();
   closeModal('account');
   document.getElementById('acc-name').value = '';
   document.getElementById('acc-solde').value = '';
@@ -1312,39 +1322,65 @@ async function confirmPosition() {
     const pru = parseFloat(pruRaw);
     const currentEur = selectedTicker.priceEur ?? selectedTicker.price ?? 0;
     const existing = positions.find(p => p.symbol === selectedTicker.symbol && p.accountId === accountId);
+    // Snapshot pour rollback si la DB échoue
+    const _snapQty = existing ? existing.qty : null;
+    const _snapPrice = existing ? existing.price : null;
+    let _newPos = null;
     if (existing) {
       const newPRU = (existing.qty * existing.price + qty * pru) / (existing.qty + qty);
       existing.qty = parseFloat((existing.qty + qty).toFixed(8));
       existing.price = parseFloat(newPRU.toFixed(10));
       existing.current = currentEur; existing.lastUpdated = Date.now();
     } else {
-      const pos = { id: crypto.randomUUID(), symbol: selectedTicker.symbol, name: selectedTicker.name, exchange: selectedTicker.exchange || '', currency: selectedTicker.currency || 'EUR', accountId, qty, price: pru, current: currentEur, lastUpdated: Date.now() };
-      positions.push(pos); positionHistory[pos.id] = [];
-      fetchHistory(pos.symbol).then(hist => {
-        if (hist && hist.length > 1) { positionHistory[pos.id] = hist; renderPositions(); }
+      _newPos = { id: crypto.randomUUID(), symbol: selectedTicker.symbol, name: selectedTicker.name, exchange: selectedTicker.exchange || '', currency: selectedTicker.currency || 'EUR', accountId, qty, price: pru, current: currentEur, lastUpdated: Date.now() };
+      positions.push(_newPos); positionHistory[_newPos.id] = [];
+      fetchHistory(_newPos.symbol).then(hist => {
+        if (hist && hist.length > 1) { positionHistory[_newPos.id] = hist; renderPositions(); }
       });
     }
     const tx = { id: crypto.randomUUID(), type: 'buy', symbol: selectedTicker.symbol, name: selectedTicker.name, qty, price: pru, accountName: accName, ts: Date.now() };
-    transactions.unshift(tx);
+    transactions.unshift(tx); if (transactions.length > 500) transactions.length = 500;
     try { await Promise.all([savePositions(), saveTransaction(tx)]); }
-    catch(e) { console.error('[Moumix] confirmPosition buy error:', e); showToast('Erreur sauvegarde achat.', 'error'); }
+    catch(e) {
+      console.error('[Moumix] confirmPosition buy error:', e);
+      showToast('Erreur sauvegarde achat.', 'error');
+      // Rollback local state
+      if (existing && _snapQty !== null) { existing.qty = _snapQty; existing.price = _snapPrice; }
+      if (_newPos) { positions = positions.filter(p => p.id !== _newPos.id); delete positionHistory[_newPos.id]; }
+      transactions.shift();
+    }
   } else {
     const existing = positions.find(p => p.symbol === selectedTicker.symbol && p.accountId === accountId);
     if (!existing) return alert('Position introuvable');
     if (qty > existing.qty) return alert(`Vous ne pouvez pas vendre plus que vous ne possédez (${existing.qty} titres)`);
     const sellPrice = existing.current;
     const tx = { id: crypto.randomUUID(), type: 'sell', symbol: existing.symbol, name: existing.name, qty, price: sellPrice, accountName: accName, ts: Date.now() };
-    transactions.unshift(tx);
-    if (Math.abs(qty - existing.qty) < 0.000001) {
-      await deletePositionDB(existing.id);
-      delete positionHistory[existing.id];
-      positions = positions.filter(p => p.id !== existing.id);
-    } else {
-      existing.qty = parseFloat((existing.qty - qty).toFixed(8));
-      await savePositions();
+    // Snapshot pour rollback
+    const _snapSellQty = existing.qty;
+    transactions.unshift(tx); if (transactions.length > 500) transactions.length = 500;
+    const _fullSell = Math.abs(qty - existing.qty) < 0.000001;
+    try {
+      if (_fullSell) {
+        await deletePositionDB(existing.id);
+        delete positionHistory[existing.id];
+        positions = positions.filter(p => p.id !== existing.id);
+      } else {
+        existing.qty = parseFloat((existing.qty - qty).toFixed(8));
+        await savePositions();
+      }
+      await saveTransaction(tx);
+    } catch(e) {
+      console.error('[Moumix] confirmPosition sell error:', e);
+      showToast('Erreur sauvegarde vente.', 'error');
+      // Rollback local state
+      if (_fullSell) {
+        if (!positions.find(p => p.id === existing.id)) positions.push(existing);
+        positionHistory[existing.id] = positionHistory[existing.id] || [];
+      } else {
+        existing.qty = _snapSellQty;
+      }
+      transactions.shift();
     }
-    try { await saveTransaction(tx); }
-    catch(e) { console.error('[Moumix] confirmPosition sell error:', e); showToast('Erreur sauvegarde vente.', 'error'); }
   }
   closeModal('position'); renderAll();
 }
@@ -1367,14 +1403,19 @@ async function deleteAccount(id) {
     ? `Supprimer le compte "${a.name}" et ses ${posCount} position${posCount > 1 ? 's' : ''} ?`
     : `Supprimer le compte "${a.name}" ?`;
   if (!confirm(msg)) return;
-  // Supprimer d'abord les positions associées à ce compte
+  // Supprimer d'abord les positions associées à ce compte (en parallèle)
   const orphanPositions = positions.filter(p => p.accountId === id);
-  for (const p of orphanPositions) {
-    await deletePositionDB(p.id);
-    delete positionHistory[p.id];
+  try {
+    await Promise.all(orphanPositions.map(p => deletePositionDB(p.id)));
+    await deleteAccountDB(id);
+  } catch(e) {
+    console.error('[Moumix] deleteAccount error:', e);
+    showToast('Erreur : suppression impossible.', 'error');
+    return;
   }
+  // Mutation locale seulement après succès DB
+  orphanPositions.forEach(p => { delete positionHistory[p.id]; });
   positions = positions.filter(p => p.accountId !== id);
-  try { await deleteAccountDB(id); } catch(e) { console.error('[Moumix] deleteAccount error:', e); showToast('Erreur : suppression compte impossible.', 'error'); return; }
   accounts = accounts.filter(a => a.id !== id);
   renderPositions(); renderAccounts(); renderAllocation(); renderByAccount(); renderSummary(); renderFilterToggles();
 }
@@ -1935,7 +1976,11 @@ async function saveGoal() {
     goal = { id: crypto.randomUUID(), name, target, current, emoji: selectedGoalEmoji, createdAt: Date.now() };
     goals.push(goal);
   }
-  await persistGoals(goal);
+  try { await persistGoals(goal); } catch(e) {
+    console.error('[Moumix] saveGoal error:', e);
+    showToast('Erreur : impossible de sauvegarder l\'objectif.', 'error');
+    return;
+  }
   closeGoalModal();
   renderGoals();
 }
@@ -1956,8 +2001,14 @@ async function editGoal(id) {
 async function deleteGoal(id) {
   const goal = goals.find(g => g.id === id);
   if (!goal) return;
+  const _backup = [...goals];
   goals = goals.filter(g => g.id !== id);
-  await persistGoals(goal, true);
+  try { await persistGoals(goal, true); } catch(e) {
+    console.error('[Moumix] deleteGoal error:', e);
+    goals = _backup;
+    showToast('Erreur : impossible de supprimer l\'objectif.', 'error');
+    return;
+  }
   renderGoals();
 }
 
@@ -2095,13 +2146,18 @@ async function snapshotPatrimoine() {
   if (val <= 0) return;
   const today = new Date().toISOString().slice(0,10);
   const last = patrimoineHistory[patrimoineHistory.length - 1];
+  const _snapHistory = [...patrimoineHistory];
   if (last && last.date === today) {
     patrimoineHistory[patrimoineHistory.length - 1].value = val;
   } else {
     patrimoineHistory.push({ date: today, value: val });
   }
   if (patrimoineHistory.length > 730) patrimoineHistory = patrimoineHistory.slice(-730);
-  await savePatrimoineHistory();
+  try { await savePatrimoineHistory(); } catch(e) {
+    console.error('[Moumix] snapshotPatrimoine error:', e);
+    patrimoineHistory = _snapHistory;
+    return;
+  }
   renderChart();
 }
 
@@ -2451,8 +2507,14 @@ async function confirmAddPrel() {
   const splitRaw = parseInt(document.getElementById('prel-new-split').value);
   const split = splitRaw >= 2 ? splitRaw : 1;
   if (!name || !amount) return alert('Nom et montant requis');
-  prelevements.push({ id: crypto.randomUUID(), name, amount, freq, cat, split });
-  try { await savePrelevements(); } catch(e) { console.error('[Moumix] confirmAddPrel error:', e); showToast('Erreur : impossible d\'ajouter.', 'error'); }
+  const _newPrel = { id: crypto.randomUUID(), name, amount, freq, cat, split };
+  prelevements.push(_newPrel);
+  try { await savePrelevements(); } catch(e) {
+    console.error('[Moumix] confirmAddPrel error:', e);
+    prelevements = prelevements.filter(p => p.id !== _newPrel.id);
+    showToast('Erreur : impossible d\'ajouter.', 'error');
+    return;
+  }
   cancelAddPrel(); renderPrelevements();
 }
 async function deletePrel(id) {
@@ -2754,7 +2816,7 @@ async function initApp(user) {
     await loadAllData();
     hideOfflineBanner();
   } catch(e) {
-    console.warn('loadAllData error:', e.message);
+    console.error('[Moumix] loadAllData error:', e.message);
     if (e.message === 'timeout') {
       showOfflineBanner('⏱ Supabase ne répond pas — nouvelles tentative…', 'warn');
       // Réessaie une fois après 1s supplémentaire
@@ -3467,9 +3529,14 @@ async function confirmEditPosition() {
   p.price = parseFloat(price.toFixed(10));
   const accName = getAccountName(p.accountId);
   const tx = { id: crypto.randomUUID(), type: 'edit', symbol: p.symbol, name: p.name, qty: p.qty, price: p.price, oldQty, oldPrice, accountName: accName, ts: Date.now() };
-  transactions.unshift(tx);
-  try { await Promise.all([savePositions(), saveTransaction(tx)]); }
-  catch(e) { console.error('[Moumix] confirmEditPosition error:', e); showToast('Erreur sauvegarde modification.', 'error'); }
+  transactions.unshift(tx); if (transactions.length > 500) transactions.length = 500;
+  try { await Promise.all([savePositions(), saveTransaction(tx)]); } catch(e) {
+    console.error('[Moumix] confirmEditPosition error:', e);
+    p.qty = oldQty; p.price = oldPrice; // rollback
+    transactions.shift();
+    showToast('Erreur sauvegarde modification.', 'error');
+    return;
+  }
   closeEditPosition();
   renderPositions(); renderAllocation(); renderByAccount(); renderSummary();
   showToast('✅ Position mise à jour', 'success');
