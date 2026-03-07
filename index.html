@@ -2975,8 +2975,9 @@ async function fetchRSS(url) {
     const source  = sourceEl?.textContent?.trim()
                     || new URL(url).hostname.replace('www.','').replace('news.google.com','Google News');
     const cleanDesc = desc.replace(/<[^>]+>/g,'').replace(/&[a-z]+;/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
+    const ts = pubDate ? new Date(pubDate).getTime() : 0;
     const ago = pubDate ? timeAgoFromDate(new Date(pubDate)) : '';
-    return { title, link, desc: cleanDesc, ago, source };
+    return { title, link, desc: cleanDesc, ago, source, _ts: ts };
   }).filter(i => i.title && i.title.length > 5);
 }
 
@@ -3040,16 +3041,27 @@ async function loadNews() {
       </div>
     </div>`).join('');
 
-  let items = [];
   try {
-    for (const url of NEWS_FEEDS_FR) {
-      try {
-        items = await fetchRSS(url);
-        if (items.length > 0) break;
-      } catch(e) { continue; }
-    }
-    if (items.length > 0) {
-      renderNewsFeed(items);
+    // Fetch tous les feeds en parallèle
+    const results = await Promise.allSettled(NEWS_FEEDS_FR.map(url => fetchRSS(url)));
+
+    // Merger tous les articles réussis
+    let allItems = results
+      .filter(r => r.status === 'fulfilled' && r.value?.length)
+      .flatMap(r => r.value);
+
+    if (allItems.length > 0) {
+      // Dédupliquer par titre (premiers mots)
+      const seen = new Set();
+      allItems = allItems.filter(item => {
+        const key = item.title.slice(0, 40).toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      // Trier par date (plus récent en premier)
+      allItems.sort((a, b) => (b._ts || 0) - (a._ts || 0));
+      renderNewsFeed(allItems.slice(0, 15));
     } else {
       feed.innerHTML = `<div class="empty-state" style="padding:48px">
         Impossible de charger les actualités (CORS bloqué).<br>
@@ -3932,6 +3944,5 @@ async function saveHistoryImport() {
          alt="Shiba">
   </div>
 </div>
-
 </body>
 </html>
