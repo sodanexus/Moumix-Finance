@@ -85,7 +85,7 @@ auth.users
 ## 📂 Structure du projet
 
 ```
-moumix_finance.html   ← tout est là
+index.html            ← tout est là
 README.md
 supabase_add_goals.sql  ← migration goals (déjà exécutée)
 ```
@@ -110,7 +110,7 @@ Les proxies CORS pour Yahoo Finance sont tentés dans l'ordre :
 
 ## 🚀 Déploiement
 
-Ouvrir `moumix_finance.html` dans un navigateur. C'est tout.
+Ouvrir `index.html` dans un navigateur. C'est tout.
 
 Peut aussi être hébergé sur GitHub Pages, Netlify, un NAS, une clé USB…
 
