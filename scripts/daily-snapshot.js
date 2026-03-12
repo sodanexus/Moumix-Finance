@@ -34,7 +34,7 @@ async function snapshotUser(userId) {
   // 1. Récupérer toutes les positions de l'utilisateur
   const { data: positions, error: posErr } = await sb
     .from('positions')
-    .select('qty, current, accountId')
+    .select('qty, current, account_id')
     .eq('user_id', userId);
 
   if (posErr) throw new Error(`positions error for ${userId}: ${posErr.message}`);
@@ -63,7 +63,7 @@ async function snapshotUser(userId) {
   const fixedIds = new Set((fixedAccounts || []).map(a => a.id));
 
   const posTotal = positions
-    .filter(p => !fixedIds.has(p.accountId))
+    .filter(p => !fixedIds.has(p.account_id))
     .reduce((s, p) => s + (parseFloat(p.current) || 0) * (parseFloat(p.qty) || 0), 0);
 
   const totalValue = Math.round((posTotal + fixedTotal) * 100) / 100;
