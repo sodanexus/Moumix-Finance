@@ -771,10 +771,25 @@ async function loadAllData() {
     timeout
   ]);
 
-  // Si une requête retourne une erreur d'auth → forcer logout
-  if (accRes.error?.status === 401 || posRes.error?.status === 401) {
-    await sb.auth.signOut();
-    throw new Error('auth_expired');
+  const queryErrors = [
+    ['accounts', accRes.error],
+    ['positions', posRes.error],
+    ['prelevements', prelRes.error],
+    ['transactions', txRes.error],
+    ['patrimoine_history', histRes.error],
+    ['goals', goalsRes.error],
+  ].filter(([, err]) => Boolean(err));
+
+  if (queryErrors.length > 0) {
+    const firstErr = queryErrors[0][1];
+    if (firstErr?.status === 401) {
+      await sb.auth.signOut();
+      throw new Error('auth_expired');
+    }
+    const details = queryErrors
+      .map(([table, err]) => `${table}: ${err.message || 'unknown error'}`)
+      .join(' | ');
+    throw new Error(`load_failed: ${details}`);
   }
 
   accounts = (accRes.data || []).map(a => ({
@@ -2820,7 +2835,7 @@ async function initApp(user) {
   } catch(e) {
     console.error('[Moumix] loadAllData error:', e.message);
     if (e.message === 'timeout') {
-      showOfflineBanner('⏱ Supabase ne répond pas — nouvelles tentative…', 'warn');
+      showOfflineBanner('⏱ Supabase ne répond pas — nouvelle tentative…', 'warn');
       // Réessaie une fois après 1s supplémentaire
       try {
         await new Promise(r => setTimeout(r, TIMING_SUPABASE_RETRY));
