@@ -945,24 +945,30 @@ async function deletePrelDB(id) {
 }
 
 // ─── YAHOO FINANCE API (via proxy CORS) ──────────────────────────────────────
-const YF_BASE = 'https://query1.finance.yahoo.com';
+const YF_BASES = [
+  'https://query1.finance.yahoo.com',
+  'https://query2.finance.yahoo.com',
+];
 
 // Proxies CORS publics — essayés dans l'ordre en cas d'échec
 const CORS_PROXIES = [
-  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
   url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 
 // Proxy CORS public gratuit
 async function yfFetch(path) {
-  const url = YF_BASE + path;
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(TIMING_PROXY_FETCH) });
-      if (!res.ok) continue;
-      return await res.json();
-    } catch(e) { continue; }
+  for (const base of YF_BASES) {
+    const url = base + path;
+    for (const proxy of CORS_PROXIES) {
+      try {
+        const res = await fetch(proxy(url), { signal: AbortSignal.timeout(TIMING_PROXY_FETCH) });
+        if (!res.ok) continue;
+        const json = await res.json();
+        if (json?.chart?.result || json?.quotes || json?.finance) return json;
+      } catch(e) { continue; }
+    }
   }
   throw new Error('yfFetch: tous les proxies ont échoué');
 }
@@ -1003,16 +1009,26 @@ async function fetchQuote(symbol) {
 }
 
 async function fetchHistory(symbol) {
-  try {
-    const data = await yfFetch(`/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`);
-    const result = data?.chart?.result?.[0];
-    if (!result) return null;
-    const closes = result.indicators?.quote?.[0]?.close || [];
-    const currency = result.meta?.currency || 'USD';
-    // Convertir en EUR
-    const rate = await fetchEurRate(currency);
-    return closes.filter(v => v != null).map(v => currency === 'EUR' ? v : v / rate);
-  } catch(e) { return null; }
+  // Essaie plusieurs plages/intervalles pour maximiser les chances de succès via proxy
+  const attempts = [
+    `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=5m&range=1d`,
+    `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`,
+    `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1mo`,
+  ];
+  for (const path of attempts) {
+    try {
+      const data = await yfFetch(path);
+      const result = data?.chart?.result?.[0];
+      if (!result) continue;
+      const closes = result.indicators?.quote?.[0]?.close || [];
+      const valid = closes.filter(v => v != null);
+      if (valid.length < 2) continue;
+      const currency = result.meta?.currency || 'USD';
+      const rate = await fetchEurRate(currency);
+      return valid.map(v => currency === 'EUR' ? v : v / rate);
+    } catch(e) { continue; }
+  }
+  return null;
 }
 
 async function searchTickers(query, seq) {
@@ -2866,7 +2882,18 @@ async function initApp(user) {
   clearInterval(_eurUsdInterval);
   _eurUsdInterval = setInterval(fetchEurUsd, 5 * 60 * 1000);
   setTimeout(() => showDog(user), TIMING_DOG_SHOW);
-  if (positions.length > 0) refreshAllPrices();
+  if (positions.length > 0) {
+    refreshAllPrices();
+    // Charger les historiques en parallèle dès le démarrage pour afficher les sparklines TREND
+    const uniqueSymsInit = [...new Set(positions.map(p => p.symbol))];
+    for (const sym of uniqueSymsInit) {
+      fetchHistory(sym).then(hist => {
+        if (!hist || hist.length < 2) return;
+        positions.filter(p => p.symbol === sym).forEach(p => { positionHistory[p.id] = hist; });
+        renderPositions();
+      });
+    }
+  }
   clearInterval(_priceRefreshInterval);
   _priceRefreshInterval = setInterval(() => { if (positions.length > 0 && document.visibilityState === 'visible') refreshAllPrices(); }, 5 * 60 * 1000);
 }
@@ -2960,21 +2987,47 @@ const NEWS_FEEDS_FR = [
 ];
 
 async function fetchRSSWithProxy(feedUrl) {
+  // Essai 1 : rss2json (spécialisé RSS, contourne CORS+XML)
+  try {
+    const r2jUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=12`;
+    const res = await fetch(r2jUrl, { signal: AbortSignal.timeout(TIMING_PROXY_FETCH) });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.status === 'ok' && json.items?.length) return { type: 'json', data: json };
+    }
+  } catch(e) {}
+  // Essai 2 : proxies CORS classiques
   for (const proxy of CORS_PROXIES) {
     try {
       const res = await fetch(proxy(feedUrl), { signal: AbortSignal.timeout(TIMING_PROXY_FETCH) });
       if (!res.ok) continue;
       const text = await res.text();
       if (!text.includes('<item>') && !text.includes('<entry>')) continue;
-      return text;
+      return { type: 'xml', data: text };
     } catch(e) { continue; }
   }
   return null;
 }
 
 async function fetchRSS(url) {
-  const text = await fetchRSSWithProxy(url);
-  if (!text) throw new Error('Tous les proxies ont échoué');
+  const result = await fetchRSSWithProxy(url);
+  if (!result) throw new Error('Tous les proxies ont échoué');
+  // Chemin rapide : rss2json renvoie du JSON propre
+  if (result.type === 'json') {
+    const feed = result.data;
+    const feedHost = (() => { try { return new URL(url).hostname.replace('www.','').replace('news.google.com','Google News'); } catch(e) { return 'Finance'; } })();
+    return feed.items.map(item => {
+      const title = item.title?.trim() || '';
+      const link  = item.link || item.guid || '#';
+      const desc  = (item.description || item.content || '').replace(/<[^>]+>/g,'').replace(/&[a-z]+;/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
+      const source = item.author || feed.feed?.title || feedHost;
+      const ts  = item.pubDate ? new Date(item.pubDate).getTime() : 0;
+      const ago = item.pubDate ? timeAgoFromDate(new Date(item.pubDate)) : '';
+      return { title, link, desc, ago, source, _ts: ts };
+    }).filter(i => i.title && i.title.length > 5);
+  }
+  // Chemin XML classique
+  const text = result.data;
   const parser = new DOMParser();
   const xml = parser.parseFromString(text, 'text/xml');
   const items = [...xml.querySelectorAll('item, entry')].slice(0, 10);
@@ -2985,10 +3038,9 @@ async function fetchRSS(url) {
                     || item.querySelector('link')?.nextSibling?.textContent?.trim() || '#';
     const desc    = item.querySelector('description, summary, content')?.textContent?.trim() || '';
     const pubDate = item.querySelector('pubDate, published, updated')?.textContent?.trim() || '';
-    // Google News met la source dans <source url="...">Nom</source>
     const sourceEl = item.querySelector('source');
     const source  = sourceEl?.textContent?.trim()
-                    || new URL(url).hostname.replace('www.','').replace('news.google.com','Google News');
+                    || (() => { try { return new URL(url).hostname.replace('www.','').replace('news.google.com','Google News'); } catch(e){ return 'Finance'; }})();
     const cleanDesc = desc.replace(/<[^>]+>/g,'').replace(/&[a-z]+;/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
     const ts = pubDate ? new Date(pubDate).getTime() : 0;
     const ago = pubDate ? timeAgoFromDate(new Date(pubDate)) : '';
