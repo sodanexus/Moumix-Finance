@@ -195,9 +195,6 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
 
   </div><!-- end tab-overview -->
 
-  <!-- TAB: ACTUALITÉS -->
-
-
   <!-- TAB: DÉTAILS -->
   <div class="tab-panel" id="tab-details">
 
@@ -2963,52 +2960,6 @@ window.addEventListener('scroll', () => {
   dog.classList.toggle('dog-hidden', window.scrollY > 80);
 }, { passive: true });
 
-// ─── ACTUALITÉS ──────────────────────────────────────────────────────────────
-let newsLoading = false;
-
-const NEWS_FEEDS_FR = [
-  'https://news.google.com/rss/search?q=bourse+finance+marchés&hl=fr&gl=FR&ceid=FR:fr',
-  'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtWnlHZ0pHVWlnQVAB?hl=fr&gl=FR&ceid=FR:fr',
-  'https://finance.yahoo.com/news/rss',
-];
-
-async function fetchRSSWithProxy(feedUrl) {
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const res = await fetch(proxy(feedUrl), { signal: AbortSignal.timeout(TIMING_PROXY_FETCH) });
-      if (!res.ok) continue;
-      const text = await res.text();
-      if (!text.includes('<item>') && !text.includes('<entry>')) continue;
-      return text;
-    } catch(e) { continue; }
-  }
-  return null;
-}
-
-async function fetchRSS(url) {
-  const text = await fetchRSSWithProxy(url);
-  if (!text) throw new Error('Tous les proxies ont échoué');
-  const parser = new DOMParser();
-  const xml = parser.parseFromString(text, 'text/xml');
-  const items = [...xml.querySelectorAll('item, entry')].slice(0, 10);
-  return items.map(item => {
-    const title   = item.querySelector('title')?.textContent?.trim() || '';
-    const link    = item.querySelector('link')?.textContent?.trim()
-                    || item.querySelector('link')?.getAttribute('href')
-                    || item.querySelector('link')?.nextSibling?.textContent?.trim() || '#';
-    const desc    = item.querySelector('description, summary, content')?.textContent?.trim() || '';
-    const pubDate = item.querySelector('pubDate, published, updated')?.textContent?.trim() || '';
-    // Google News met la source dans <source url="...">Nom</source>
-    const sourceEl = item.querySelector('source');
-    const source  = sourceEl?.textContent?.trim()
-                    || new URL(url).hostname.replace('www.','').replace('news.google.com','Google News');
-    const cleanDesc = desc.replace(/<[^>]+>/g,'').replace(/&[a-z]+;/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
-    const ts = pubDate ? new Date(pubDate).getTime() : 0;
-    const ago = pubDate ? timeAgoFromDate(new Date(pubDate)) : '';
-    return { title, link, desc: cleanDesc, ago, source, _ts: ts };
-  }).filter(i => i.title && i.title.length > 5);
-}
-
 function timeAgoFromDate(date) {
   const t = date.getTime();
   return isNaN(t) ? '' : timeAgo(t);
@@ -3049,75 +3000,6 @@ async function loadNewsIndices() {
       }
     } catch(e) {}
   }));
-}
-
-async function loadNews() {
-  if (newsLoading) return;
-  newsLoading = true;
-
-  const feed = document.getElementById('newsFeed');
-  if (!feed) { newsLoading = false; return; } // newsLoading reset before early-return
-  feed.innerHTML = Array(4).fill(0).map((_, i) => `
-    <div class="news-card" style="animation:fadeInUp 0.3s ease ${i*0.07}s both;pointer-events:none">
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <div class="skeleton" style="width:60px;height:14px;border-radius:4px"> </div>
-          <div class="skeleton" style="width:40px;height:14px;border-radius:4px"> </div>
-        </div>
-        <div class="skeleton" style="height:16px;width:90%;margin-bottom:6px;border-radius:4px"> </div>
-        <div class="skeleton" style="height:12px;width:70%;border-radius:4px"> </div>
-      </div>
-    </div>`).join('');
-
-  try {
-    // Fetch tous les feeds en parallèle
-    const results = await Promise.allSettled(NEWS_FEEDS_FR.map(url => fetchRSS(url)));
-
-    // Merger tous les articles réussis
-    let allItems = results
-      .filter(r => r.status === 'fulfilled' && r.value?.length)
-      .flatMap(r => r.value);
-
-    if (allItems.length > 0) {
-      // Dédupliquer par titre (premiers mots)
-      const seen = new Set();
-      allItems = allItems.filter(item => {
-        const key = item.title.slice(0, 40).toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      // Trier par date (plus récent en premier)
-      allItems.sort((a, b) => (b._ts || 0) - (a._ts || 0));
-      renderNewsFeed(allItems.slice(0, 15));
-    } else {
-      feed.innerHTML = `<div class="empty-state" style="padding:48px">
-        Impossible de charger les actualités (CORS bloqué).<br>
-        <span style="font-size:0.72rem;margin-top:4px;display:block">Essayez depuis un autre réseau ou désactivez votre bloqueur de pub.</span>
-      </div>`;
-    }
-  } finally {
-    newsLoading = false;
-  }
-}
-
-function renderNewsFeed(items) {
-  const feed = document.getElementById('newsFeed');
-  if (!feed) return;
-  if (!items.length) { feed.innerHTML = '<div class="empty-state">Aucune actualité trouvée.</div>'; return; }
-  feed.innerHTML = items.map((item, i) => `
-    <a class="news-card" href="${_esc(item.link)}" target="_blank" rel="noopener"
-       style="animation:fadeInUp 0.3s ease ${i * 0.05}s both;text-decoration:none;color:inherit">
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-          <span class="news-source-badge">${_esc(item.source)}</span>
-          ${item.ago ? `<span style="font-size:0.62rem;color:var(--muted)">${_esc(item.ago)}</span>` : ''}
-        </div>
-        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.88rem;line-height:1.4;margin-bottom:5px;color:var(--text)">${_esc(item.title)}</div>
-        ${item.desc ? `<div style="font-size:0.74rem;color:var(--muted);line-height:1.5">${_esc(item.desc)}…</div>` : ''}
-      </div>
-      <div style="flex-shrink:0;color:var(--muted);font-size:0.8rem;align-self:center">→</div>
-    </a>`).join('');
 }
 
 let simViewMode = 'graph';
