@@ -185,14 +185,30 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
     </div>
   </div>
 
-  <div class="grid">
-    <div class="card">
-      <div class="card-header"><div class="card-title">Allocation</div></div>
+  <div class="grid" style="grid-template-columns:1fr 1fr;align-items:start">
+    <!-- Allocation -->
+    <div class="card" style="grid-row:span 2">
+      <div class="card-header">
+        <div class="card-title">Allocation</div>
+        <span id="allocCount" style="font-size:0.65rem;color:var(--muted)"></span>
+      </div>
       <div class="card-body" id="allocContent"><div class="empty-state">Ajoutez des positions</div></div>
     </div>
+    <!-- Jalons patrimoniaux -->
     <div class="card">
-      <div class="card-header"><div class="card-title">Top / Flop positions</div></div>
-      <div class="card-body" id="byAccountContent"><div class="empty-state">Ajoutez des positions</div></div>
+      <div class="card-header">
+        <div class="card-title">Jalons patrimoniaux</div>
+        <span id="milestoneBadge" style="font-size:0.6rem;padding:2px 8px;border-radius:4px;background:rgba(0,229,160,0.12);color:var(--accent);font-weight:600"></span>
+      </div>
+      <div class="card-body" id="milestonesContent"><div class="empty-state">En attente de données…</div></div>
+    </div>
+    <!-- Prélèvements récurrents -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Prélèvements récurrents</div>
+        <span style="font-size:0.65rem;color:var(--muted)">/&nbsp;mois</span>
+      </div>
+      <div class="card-body" id="prelOverviewContent"><div class="empty-state">Aucun prélèvement</div></div>
     </div>
   </div>
 
@@ -1708,133 +1724,283 @@ function timeAgo(ts) {
 }
 
 function renderAllocation() {
-  const el=document.getElementById('allocContent');
-  if (positions.length===0 && accounts.filter(a=>FIXED_ACCOUNT_TYPES.has(a.type)).every(a=>!a.solde)) {
-    el.innerHTML='<div class="empty-state">Ajoutez des positions</div>'; return;
+  const el = document.getElementById('allocContent');
+  const countEl = document.getElementById('allocCount');
+  if (positions.length === 0 && accounts.filter(a => FIXED_ACCOUNT_TYPES.has(a.type)).every(a => !a.solde)) {
+    el.innerHTML = '<div class="empty-state">Ajoutez des positions</div>';
+    if (countEl) countEl.textContent = '';
+    return;
   }
-  const fixedTotalAlloc=accounts.filter(a=>FIXED_ACCOUNT_TYPES.has(a.type)).reduce((s,a)=>s+(a.solde||0),0);
-  const total=positions.reduce((s,p)=>s+p.current*p.qty,0)+fixedTotalAlloc;
-  if (total <= 0) { el.innerHTML='<div class="empty-state">Aucune valeur calculable</div>'; return; }
+  const fixedTotalAlloc = accounts.filter(a => FIXED_ACCOUNT_TYPES.has(a.type)).reduce((s, a) => s + (a.solde || 0), 0);
+  const total = positions.reduce((s, p) => s + p.current * p.qty, 0) + fixedTotalAlloc;
+  if (total <= 0) { el.innerHTML = '<div class="empty-state">Aucune valeur calculable</div>'; return; }
 
-  // Grouper les positions par symbole
-  const map={};
-  positions.forEach(p=>{
-    if(!map[p.symbol]) map[p.symbol]={val:0, name:p.name, accountTypes: new Set()};
-    map[p.symbol].val += p.current*p.qty;
+  const map = {};
+  positions.forEach(p => {
+    if (!map[p.symbol]) map[p.symbol] = { val: 0, name: p.name, accountTypes: new Set() };
+    map[p.symbol].val += p.current * p.qty;
     const accType = getAccountType(p.accountId);
     if (accType) map[p.symbol].accountTypes.add(accType);
   });
-  accounts.filter(a=>(FIXED_ACCOUNT_TYPES.has(a.type)) && a.solde>0).forEach(a=>{
-    const key=a.type+':'+a.id;
-    map[key]={val:a.solde, name:a.name, accountTypes: new Set([a.type])};
+  accounts.filter(a => FIXED_ACCOUNT_TYPES.has(a.type) && a.solde > 0).forEach(a => {
+    const key = a.type + ':' + a.id;
+    map[key] = { val: a.solde, name: a.name, accountTypes: new Set([a.type]) };
   });
-  const sorted=Object.entries(map).sort((a,b)=>b[1].val-a[1].val);
-
-  // Assign colors
-  const coloredSlices = sorted.map(([sym,d],i) => ({
-    sym, d,
-    pct: d.val/total,
-    color: ALLOC_COLORS[i%ALLOC_COLORS.length]
+  const sorted = Object.entries(map).sort((a, b) => b[1].val - a[1].val);
+  const slices = sorted.map(([sym, d], i) => ({
+    sym, d, pct: d.val / total, color: ALLOC_COLORS[i % ALLOC_COLORS.length]
   }));
 
-  // ── Liste items ──
-  const listItems=coloredSlices.slice(0,10).map(s=>{
-    const isLivret=s.sym.includes(':');
-    const label=isLivret?s.d.name:s.sym;
-    const sub=isLivret?'':(s.d.name||'');
-    const typeTags=[...s.d.accountTypes].map(t=>`<span class="tag ${tagClass(t)}" style="font-size:0.52rem;padding:1px 4px">${t}</span>`).join('');
-    const pctVal=(s.pct*100).toFixed(1);
-    return `<div style="margin-bottom:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">
-          <div style="width:10px;height:10px;border-radius:3px;background:${s.color};flex-shrink:0"></div>
-          <div style="min-width:0">
-            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-              <span style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.8rem;white-space:nowrap">${label}</span>
-              ${typeTags}
-            </div>
-            ${sub?`<div style="font-size:0.6rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">${sub}</div>`:''}
-          </div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-family:'DM Mono',monospace;font-size:0.75rem">${fmtEur(s.d.val)}</div>
-          <div style="font-size:0.62rem;color:var(--muted)">${pctVal}%</div>
-        </div>
-      </div>
-      <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
-        <div style="height:100%;width:${pctVal}%;background:${s.color};border-radius:3px;transition:width 0.6s ease;opacity:0.85"></div>
-      </div>
+  if (countEl) countEl.textContent = slices.length + ' ligne' + (slices.length > 1 ? 's' : '');
+
+  // ── Donut SVG ──
+  const R = 36, CX = 44, CY = 44, CIRC = 2 * Math.PI * R;
+  let offset = 0;
+  const arcs = slices.slice(0, 10).map(s => {
+    const dash = s.pct * CIRC;
+    const arc = `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${s.color}" stroke-width="12"
+      stroke-dasharray="${CIRC.toFixed(2)}" stroke-dashoffset="${(CIRC - dash + offset * CIRC / CIRC * CIRC).toFixed(2)}"
+      stroke-linecap="butt" transform="rotate(-90 ${CX} ${CY})"/>`;
+    // offset trick: use dashoffset = CIRC - cumulative_dash
+    return { arc, dash, s };
+  });
+  // Recompute properly: dashoffset = CIRC - dash, rotated by cumulative angle
+  let cumAngle = 0;
+  const arcsSvg = slices.slice(0, 10).map(s => {
+    const dash = s.pct * CIRC;
+    const gap  = CIRC - dash;
+    const rot  = -90 + cumAngle * 360;
+    cumAngle  += s.pct;
+    return `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${s.color}" stroke-width="12"
+      stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}"
+      transform="rotate(${rot.toFixed(2)} ${CX} ${CY})"/>`;
+  }).join('');
+
+  const top1 = slices[0];
+  const top1Label = top1.sym.includes(':') ? top1.d.name : top1.sym;
+  const top1Pct = (top1.pct * 100).toFixed(1) + '%';
+
+  const donutSvg = `<svg width="88" height="88" viewBox="0 0 88 88" aria-hidden="true">
+    <circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="var(--border)" stroke-width="12"/>
+    ${arcsSvg}
+    <text x="${CX}" y="41" text-anchor="middle" font-size="12" font-weight="700"
+      font-family="'DM Mono',monospace" fill="var(--text)">${top1Pct}</text>
+    <text x="${CX}" y="53" text-anchor="middle" font-size="8.5"
+      font-family="'Inter',sans-serif" fill="var(--muted)">${_esc(top1Label.slice(0, 9))}</text>
+  </svg>`;
+
+  // ── Légende ──
+  const legendItems = slices.slice(0, 8).map(s => {
+    const isFixed = s.sym.includes(':');
+    const label   = isFixed ? s.d.name : s.sym;
+    const pctVal  = (s.pct * 100).toFixed(1);
+    const tags    = [...s.d.accountTypes].map(t =>
+      `<span class="tag ${tagClass(t)}" style="font-size:0.5rem;padding:1px 4px">${t}</span>`
+    ).join('');
+    return `<div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+      <div style="width:8px;height:8px;border-radius:2px;background:${s.color};flex-shrink:0"></div>
+      <span style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.78rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px">${_esc(label)}</span>
+      ${tags}
+      <span style="font-size:0.68rem;font-family:'DM Mono',monospace;color:var(--muted);flex-shrink:0">${pctVal}%</span>
     </div>`;
   }).join('');
 
-  el.innerHTML=`
-    <div style="padding-top:4px">${listItems}</div>`;
+  // ── Barres horizontales ──
+  const barItems = slices.slice(0, 8).map(s => {
+    const isFixed = s.sym.includes(':');
+    const label   = isFixed ? s.d.name : s.sym;
+    const pctVal  = (s.pct * 100).toFixed(1);
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+      <div style="width:${pctVal}%;max-width:100%;height:5px;background:${s.color};border-radius:2px;flex-shrink:0;min-width:2px;transition:width 0.6s ease"></div>
+      <span style="font-size:0.65rem;font-family:'DM Mono',monospace;color:var(--muted);white-space:nowrap">${pctVal}% · ${fmtEur(s.d.val)}</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
+      ${donutSvg}
+      <div style="flex:1;min-width:0">${legendItems}</div>
+    </div>
+    <div style="margin-bottom:12px">${barItems}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
+      <span style="font-size:0.68rem;color:var(--muted)">Total patrimoine</span>
+      <span style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.88rem">${fmtEur(total)}</span>
+    </div>`;
 }
 
-function renderByAccount() {
-  const el = document.getElementById('byAccountContent');
-  // Uniquement les positions avec PRU connu et prix actuel
-  const activeAccountIds = new Set(accounts.filter(a => isTypeActive(a.type)).map(a => a.id));
-  const ranked = positions
-    .filter(p => activeAccountIds.has(p.accountId) && p.price > 0 && p.current > 0)
-    .map(p => {
-      const pnlEur = (p.current - p.price) * p.qty;
-      const pnlPct = ((p.current - p.price) / p.price) * 100;
-      const val = p.current * p.qty;
-      return { ...p, pnlEur, pnlPct, val };
-    })
-    .sort((a, b) => b.pnlPct - a.pnlPct);
+function renderByAccount() { renderMilestones(); renderPrelOverview(); }
 
-  if (ranked.length === 0) {
-    el.innerHTML = '<div class="empty-state">Ajoutez des positions avec PRU</div>';
-    return;
-  }
+// ─── JALONS PATRIMONIAUX ──────────────────────────────────────────────────────
+const MILESTONES = [25000, 50000, 75000, 100000, 150000, 200000, 300000, 500000, 750000, 1000000];
 
-  // Top 3 + Flop 3 (sans overlap si < 6 positions)
-  const top = ranked.slice(0, 3);
-  const flop = ranked.slice(-3).reverse().filter(p => !top.includes(p));
+function getMilestoneLabel(v) {
+  if (v >= 1000000) return '1 M €';
+  if (v >= 1000) return (v / 1000) + ' k €';
+  return v + ' €';
+}
 
-  const maxAbsPct = Math.max(...ranked.map(p => Math.abs(p.pnlPct)), 1);
+function getMilestoneReachedDate(threshold) {
+  // Cherche la première date dans patrimoine_history où value >= threshold
+  const sorted = [...patrimoineHistory].sort((a, b) => a.date < b.date ? -1 : 1);
+  const hit = sorted.find(h => parseFloat(h.value) >= threshold);
+  if (!hit) return null;
+  return hit.date; // 'YYYY-MM-DD'
+}
 
-  function renderTopFlopRow(p) {
-    const gain = p.pnlPct >= 0;
-    const color = gain ? 'var(--gain)' : 'var(--loss)';
-    const barColor = gain ? 'rgba(0,229,160,0.15)' : 'rgba(255,68,102,0.12)';
-    const barW = Math.min(Math.abs(p.pnlPct) / maxAbsPct * 100, 100).toFixed(1);
-    const sign = gain ? '+' : '';
-    const acct = accounts.find(a => a.id === p.accountId);
-    const acctTag = acct ? `<span class="tag ${tagClass(acct.type)}" style="font-size:0.5rem;padding:1px 4px">${acct.type}</span>` : '';
-    return `
-    <div style="position:relative;padding:9px 12px;border-radius:8px;overflow:hidden;margin-bottom:6px;background:var(--surface2)">
-      <div style="position:absolute;inset:0;${gain ? 'left' : 'right'}:0;width:${barW}%;background:${barColor};border-radius:8px;pointer-events:none"></div>
-      <div style="position:relative;display:flex;align-items:center;gap:8px">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:5px">
-            <span style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.82rem">${_esc(p.symbol)}</span>
-            ${acctTag}
-          </div>
-          <div style="font-size:0.62rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">${_esc(p.name||'')}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:0.85rem;color:${color}">${sign}${_fmtPct.format(p.pnlPct)}%</div>
-          <div style="font-size:0.65rem;color:${color};opacity:0.8">${sign}${fmtEur(p.pnlEur)}</div>
-        </div>
-      </div>
-    </div>`;
+function formatMilestoneDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+}
+
+function renderMilestones() {
+  const el = document.getElementById('milestonesContent');
+  const badgeEl = document.getElementById('milestoneBadge');
+  if (!el) return;
+
+  // Valeur actuelle du patrimoine
+  const fixedTotal = accounts.filter(a => FIXED_ACCOUNT_TYPES.has(a.type)).reduce((s, a) => s + (a.solde || 0), 0);
+  const current = positions.reduce((s, p) => s + p.current * p.qty, 0) + fixedTotal;
+
+  const done = MILESTONES.filter(m => current >= m);
+  const nextIdx = MILESTONES.findIndex(m => current < m);
+  const next = nextIdx >= 0 ? MILESTONES[nextIdx] : null;
+
+  if (badgeEl) {
+    const doneCount = done.length;
+    const total = MILESTONES.length;
+    badgeEl.textContent = doneCount + ' / ' + total;
   }
 
   let html = '';
-  if (top.length) {
-    html += `<div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gain);margin-bottom:6px;font-weight:600">▲ Meilleures</div>`;
-    html += top.map(p => renderTopFlopRow(p)).join('');
+
+  // ── Prochain jalon ──
+  if (next) {
+    const prev = nextIdx > 0 ? MILESTONES[nextIdx - 1] : 0;
+    const pct  = Math.min(((current - prev) / (next - prev)) * 100, 100);
+    const remaining = next - current;
+    html += `<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:4px">Prochain jalon</div>
+      <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1.25rem;margin-bottom:2px">${getMilestoneLabel(next)}</div>
+      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin:8px 0 5px">
+        <div style="height:100%;width:${pct.toFixed(1)}%;background:var(--accent);border-radius:3px;transition:width 0.8s cubic-bezier(0.4,0,0.2,1)"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:0.65rem;font-family:'DM Mono',monospace;color:var(--muted)">
+        <span>${fmtEur(current)}</span>
+        <span>${pct.toFixed(0)}% · encore ${fmtEur(remaining)}</span>
+        <span>${getMilestoneLabel(next)}</span>
+      </div>
+    </div>`;
+  } else {
+    html += `<div style="background:rgba(0,229,160,0.08);border:1px solid rgba(0,229,160,0.3);border-radius:10px;padding:12px 14px;margin-bottom:14px;text-align:center">
+      <div style="font-size:1.5rem;margin-bottom:4px">🏆</div>
+      <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1rem;color:var(--accent)">1 M € atteint !</div>
+    </div>`;
   }
-  if (flop.length) {
-    html += `<div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--loss);margin:${top.length?'14px':0} 0 6px;font-weight:600">▼ À surveiller</div>`;
-    html += flop.map(p => renderTopFlopRow(p)).join('');
-  }
+
+  // ── Liste des jalons ──
+  html += '<div style="display:flex;flex-direction:column;gap:5px">';
+  MILESTONES.forEach(m => {
+    const isDone = current >= m;
+    const isNext = m === next;
+    const dateStr = isDone ? getMilestoneReachedDate(m) : null;
+    const dateLabel = dateStr ? formatMilestoneDate(dateStr) : '';
+
+    let iconHtml, labelStyle, labelText;
+    if (isDone) {
+      iconHtml = `<div style="width:18px;height:18px;border-radius:50%;background:rgba(0,229,160,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:var(--accent)">✓</div>`;
+      labelStyle = 'text-decoration:line-through;color:var(--muted)';
+    } else if (isNext) {
+      iconHtml = `<div style="width:18px;height:18px;border-radius:50%;background:rgba(0,112,243,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;color:var(--accent2)">→</div>`;
+      labelStyle = 'font-weight:700;color:var(--text)';
+    } else {
+      iconHtml = `<div style="width:18px;height:18px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:var(--muted)">○</div>`;
+      labelStyle = 'color:var(--muted)';
+    }
+
+    html += `<div style="display:flex;align-items:center;gap:8px">
+      ${iconHtml}
+      <span style="font-size:0.78rem;flex:1;${labelStyle}">${getMilestoneLabel(m)}</span>
+      <span style="font-size:0.65rem;font-family:'DM Mono',monospace;color:${isNext ? 'var(--accent2)' : 'var(--muted)'}">${isNext ? 'en cours' : dateLabel}</span>
+    </div>`;
+  });
+  html += '</div>';
 
   el.innerHTML = html;
 }
+
+// ─── PRÉLÈVEMENTS OVERVIEW ────────────────────────────────────────────────────
+function renderPrelOverview() {
+  const el = document.getElementById('prelOverviewContent');
+  if (!el) return;
+  if (!prelevements || prelevements.length === 0) {
+    el.innerHTML = '<div class="empty-state">Aucun prélèvement — ajoutez-en dans Détails</div>';
+    return;
+  }
+
+  const FREQ_TO_MONTHLY = { mensuel: 1, trimestriel: 1 / 3, annuel: 1 / 12 };
+  const ICON_MAP = {
+    PEA: 'ti-chart-bar', CTO: 'ti-chart-bar', Livret: 'ti-building-bank',
+    Immo: 'ti-home', Autre: 'ti-wallet', default: 'ti-arrows-exchange'
+  };
+  const COLOR_MAP = {
+    PEA:    { bg: 'rgba(0,229,160,0.1)',   color: 'var(--accent)' },
+    CTO:    { bg: 'rgba(0,112,243,0.1)',   color: 'var(--accent2)' },
+    Livret: { bg: 'rgba(0,200,255,0.1)',   color: '#00c8ff' },
+    Immo:   { bg: 'rgba(160,100,255,0.1)', color: '#c27aff' },
+    Autre:  { bg: 'rgba(100,100,100,0.1)', color: 'var(--muted)' },
+    default:{ bg: 'rgba(255,180,0,0.1)',   color: '#ffb400' }
+  };
+
+  const totalMonthly = prelevements.reduce((s, p) => {
+    const freq = (p.frequency || p.freq || 'mensuel').toLowerCase();
+    return s + (parseFloat(p.amount || p.montant || 0)) * (FREQ_TO_MONTHLY[freq] || 1);
+  }, 0);
+
+  const rows = prelevements.slice(0, 5).map(p => {
+    const freq = (p.frequency || p.freq || 'mensuel').toLowerCase();
+    const amount = parseFloat(p.amount || p.montant || 0);
+    const monthly = amount * (FREQ_TO_MONTHLY[freq] || 1);
+    const name = _esc(p.name || p.nom || '—');
+
+    // Deviner le type depuis le nom ou choisir défaut
+    const typeKey = Object.keys(COLOR_MAP).find(k => name.toUpperCase().includes(k.toUpperCase())) || 'default';
+    const { bg, color } = COLOR_MAP[typeKey] || COLOR_MAP.default;
+    const icon = ICON_MAP[typeKey] || ICON_MAP.default;
+    const freqLabel = { mensuel: 'mensuel', trimestriel: 'trimestriel', annuel: 'annuel' }[freq] || freq;
+
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <div style="width:28px;height:28px;border-radius:6px;background:${bg};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="ti ${icon}" style="font-size:13px;color:${color}" aria-hidden="true"></i>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:0.78rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
+        <div style="font-size:0.62rem;color:var(--muted)">${freqLabel}${freq !== 'mensuel' ? ' · ' + fmtEur(monthly) + '/mois' : ''}</div>
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-size:0.78rem;font-weight:600;color:var(--text);text-align:right;flex-shrink:0">${fmtEur(amount)} €</div>
+    </div>`;
+  }).join('');
+
+  const moreCount = prelevements.length - 5;
+  const moreHtml = moreCount > 0
+    ? `<div style="font-size:0.65rem;color:var(--muted);text-align:center;padding-top:8px">+ ${moreCount} autre${moreCount > 1 ? 's' : ''} — voir Détails</div>`
+    : '';
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1.4rem">${fmtEur(totalMonthly)} €</div>
+        <div style="font-size:0.65rem;color:var(--muted);margin-top:1px">investis automatiquement / mois</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1rem;color:var(--muted)">${prelevements.length}</div>
+        <div style="font-size:0.6rem;color:var(--muted)">virement${prelevements.length > 1 ? 's' : ''}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:2px">${rows}</div>
+    ${moreHtml}`;
+}
+
 function renderSummary() {
   const activeAccounts = accounts.filter(a => isTypeActive(a.type));
   const activeAccountIds = new Set(activeAccounts.map(a => a.id));
