@@ -1814,7 +1814,13 @@ function renderByAccount() {
   const fixedTotal = accounts.filter(a => FIXED_ACCOUNT_TYPES.has(a.type)).reduce((s, a) => s + (a.solde || 0), 0);
   const current = positions.reduce((s, p) => s + p.current * p.qty, 0) + fixedTotal;
 
-  const doneList = MILESTONES.filter(m => current >= m);
+  // Un jalon est "atteint" si la valeur actuelle OU l'historique passé le dépasse
+  // → évite qu'une baisse temporaire "décoite" un jalon acquis
+  const maxEverReached = Math.max(
+    current,
+    ...patrimoineHistory.map(h => parseFloat(h.value) || 0)
+  );
+  const doneList = MILESTONES.filter(m => maxEverReached >= m);
   const nextIdx  = MILESTONES.findIndex(m => current < m);
   const next     = nextIdx >= 0 ? MILESTONES[nextIdx] : null;
 
@@ -1855,13 +1861,22 @@ function renderByAccount() {
 
   html += '<div style="display:flex;flex-direction:column;gap:6px">';
   toShow.forEach(m => {
-    const isDone    = current >= m;
+    const isDone    = maxEverReached >= m;
     const isNext    = m === next;
+    const everDone  = isDone && current < m; // atteint dans le passé mais pas aujourd'hui
     const dateLabel = isDone ? formatMilestoneDate(getMilestoneReachedDate(m)) : '';
+    const dateDisplay = everDone
+      ? `<span style="font-size:0.65rem;font-family:'DM Mono',monospace;color:#ffb400" title="Patrimoine actuel en dessous">atteint ↓</span>`
+      : `<span style="font-size:0.65rem;font-family:'DM Mono',monospace;color:${isNext ? 'var(--accent2)' : 'var(--muted)'}">${isNext ? 'en cours' : dateLabel}</span>`;
     let iconHtml, labelStyle;
-    if (isDone) {
+    if (isDone && !everDone) {
+      // Atteint et toujours au-dessus
       iconHtml   = `<div style="width:18px;height:18px;border-radius:50%;background:rgba(0,229,160,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:var(--accent)">✓</div>`;
       labelStyle = 'text-decoration:line-through;color:var(--muted)';
+    } else if (everDone) {
+      // Atteint dans le passé mais en dessous actuellement
+      iconHtml   = `<div style="width:18px;height:18px;border-radius:50%;background:rgba(255,180,0,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;color:#ffb400" title="Atteint mais patrimoine actuellement en dessous">↓</div>`;
+      labelStyle = 'color:#ffb400';
     } else if (isNext) {
       iconHtml   = `<div style="width:18px;height:18px;border-radius:50%;background:rgba(0,112,243,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;color:var(--accent2)">→</div>`;
       labelStyle = 'font-weight:700;color:var(--text)';
@@ -1872,9 +1887,7 @@ function renderByAccount() {
     html += `<div style="display:flex;align-items:center;gap:8px">
       ${iconHtml}
       <span style="font-size:0.78rem;flex:1;${labelStyle}">${getMilestoneLabel(m)}</span>
-      <span style="font-size:0.65rem;font-family:'DM Mono',monospace;color:${isNext ? 'var(--accent2)' : 'var(--muted)'}">
-        ${isNext ? 'en cours' : dateLabel}
-      </span>
+      ${dateDisplay}
     </div>`;
   });
   html += '</div>';
