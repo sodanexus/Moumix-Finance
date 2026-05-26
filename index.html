@@ -35,6 +35,12 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
 #offlineBanner.warn{background:rgba(255,180,0,0.95);color:#000}
 
 #sim-chart-card { overflow: visible !important; }
+/* Scrollbar discret pour le tableau simulateur */
+#sim-table-wrap::-webkit-scrollbar { width: 4px; height: 4px; }
+#sim-table-wrap::-webkit-scrollbar-track { background: transparent; }
+#sim-table-wrap::-webkit-scrollbar-thumb { background: rgba(0,229,160,0.25); border-radius: 4px; }
+#sim-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(0,229,160,0.5); }
+#sim-table-wrap { scrollbar-width: thin; scrollbar-color: rgba(0,229,160,0.25) transparent; }
 @media (max-width:768px) {
   .sim-view-btns { display: none !important; }
 }
@@ -2954,6 +2960,7 @@ window.addEventListener('load', async () => {
   // Laisse le SDK terminer _initialize / _recoverAndRefresh
   await new Promise(r => setTimeout(r, TIMING_SDK_INIT));
   simUpdate(); // initialise le simulateur dès le chargement
+  _simApplyDefaultView();
   try {
     const { data: { session } } = await sb.auth.getSession();
     if (session?.user) {
@@ -3008,6 +3015,7 @@ async function loadNewsIndices() {
     { sym: '^STOXX50E',name: 'Euro Stoxx' },
     { sym: '^FCHI',    name: 'CAC 40' },
     { sym: 'BTC-EUR',  name: 'Bitcoin' },
+    { sym: 'ETH-EUR',  name: 'Ethereum' },
     { sym: 'GC=F',     name: 'Or' },
     { sym: 'SI=F',     name: 'Silver' },
   ];
@@ -3040,7 +3048,7 @@ async function loadNewsIndices() {
   }));
 }
 
-let simViewMode = 'graph';
+let simViewMode = window.innerWidth <= 768 ? 'table' : 'graph';
 let simData = [];
 let simDataPess = [];
 let simDataOpti = [];
@@ -3150,6 +3158,26 @@ function simUpdate() {
 
   if (simViewMode === 'graph') simDrawChart();
   else simDrawTable();
+}
+
+// Applique la vue par défaut au premier rendu (mobile = tableau, desktop = graphique)
+function _simApplyDefaultView() {
+  const graphWrap = document.getElementById('sim-graph-wrap');
+  const tableWrap = document.getElementById('sim-table-wrap');
+  const btnGraph = document.getElementById('simViewGraph');
+  const btnTable = document.getElementById('simViewTable');
+  if (!graphWrap || !tableWrap) return;
+  if (simViewMode === 'table') {
+    graphWrap.style.display = 'none';
+    tableWrap.style.display = '';
+    if (btnGraph) btnGraph.classList.remove('active');
+    if (btnTable) btnTable.classList.add('active');
+  } else {
+    graphWrap.style.display = '';
+    tableWrap.style.display = 'none';
+    if (btnGraph) btnGraph.classList.add('active');
+    if (btnTable) btnTable.classList.remove('active');
+  }
 }
 
 function simDrawChart() {
