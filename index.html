@@ -474,6 +474,12 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
               </div>
             </div>
           </div>
+          <!-- Switch scénario tableau — mobile uniquement -->
+          <div id="sim-table-scenario-switch" style="display:none;padding:8px 12px 0;gap:6px;flex-wrap:wrap">
+            <button class="sim-scen-btn" data-scen="pess" onclick="simSetTableScenario('pess',this)" style="flex:1;font-family:'Inter',sans-serif;font-size:0.7rem;padding:5px 8px;border-radius:6px;border:1px solid rgba(255,112,112,0.35);background:rgba(255,112,112,0.08);color:#ff7070;cursor:pointer;transition:all 0.15s">Pessimiste</button>
+            <button class="sim-scen-btn active-scen" data-scen="real" onclick="simSetTableScenario('real',this)" style="flex:1;font-family:'Inter',sans-serif;font-size:0.7rem;padding:5px 8px;border-radius:6px;border:1px solid var(--accent);background:rgba(0,229,160,0.12);color:var(--accent);cursor:pointer;font-weight:600;transition:all 0.15s">Réaliste</button>
+            <button class="sim-scen-btn" data-scen="opti" onclick="simSetTableScenario('opti',this)" style="flex:1;font-family:'Inter',sans-serif;font-size:0.7rem;padding:5px 8px;border-radius:6px;border:1px solid rgba(194,122,255,0.35);background:rgba(194,122,255,0.08);color:#c27aff;cursor:pointer;transition:all 0.15s">Optimiste</button>
+          </div>
           <div id="sim-table-wrap" style="display:none;overflow-x:auto;max-height:300px;overflow-y:auto">
             <table style="width:100%;border-collapse:collapse;font-size:0.75rem">
               <thead style="position:sticky;top:0;background:var(--surface)">
@@ -3433,31 +3439,87 @@ function simTooltip3(e, year, pess, real, opti, invested) {
 }
 
 
+let simTableScenario = 'real'; // 'pess' | 'real' | 'opti'
+
+function simSetTableScenario(scen, btn) {
+  simTableScenario = scen;
+  document.querySelectorAll('.sim-scen-btn').forEach(b => {
+    const isActive = b.dataset.scen === scen;
+    b.classList.toggle('active-scen', isActive);
+    b.style.fontWeight = isActive ? '600' : '400';
+    // Garder la bordure/bg colorée mais renforcer quand actif
+    if (b.dataset.scen === 'pess') {
+      b.style.background = isActive ? 'rgba(255,112,112,0.18)' : 'rgba(255,112,112,0.08)';
+      b.style.borderColor = isActive ? '#ff7070' : 'rgba(255,112,112,0.35)';
+    } else if (b.dataset.scen === 'real') {
+      b.style.background = isActive ? 'rgba(0,229,160,0.18)' : 'rgba(0,229,160,0.08)';
+      b.style.borderColor = isActive ? 'var(--accent)' : 'rgba(0,229,160,0.35)';
+    } else {
+      b.style.background = isActive ? 'rgba(194,122,255,0.18)' : 'rgba(194,122,255,0.08)';
+      b.style.borderColor = isActive ? '#c27aff' : 'rgba(194,122,255,0.35)';
+    }
+  });
+  simDrawTable();
+}
+
 function simDrawTable() {
   const tbody = document.getElementById('sim-table-body');
   if (!simData.length) return;
-  // Update table header for 3 scenarios
+  const isMobile = window.innerWidth <= 768;
+
+  // Affiche/cache le switch scénario mobile
+  const switchEl = document.getElementById('sim-table-scenario-switch');
+  if (switchEl) switchEl.style.display = isMobile ? 'flex' : 'none';
+
   const thead = tbody.closest('table').querySelector('thead tr');
-  thead.innerHTML = `
-    <th class="sim-th sim-th-left">Année</th>
-    <th class="sim-th sim-th-right">Investi</th>
-    <th style="padding:8px 12px;text-align:right;color:#ff7070;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border);font-weight:400">Pessimiste</th>
-    <th style="padding:8px 12px;text-align:right;color:var(--accent);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border);font-weight:400">Réaliste</th>
-    <th style="padding:8px 12px;text-align:right;color:#c27aff;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border);font-weight:400">Optimiste</th>
-  `;
-  tbody.innerHTML = simData.map((d, i) => {
-    const dp = simDataPess[i];
-    const do_ = simDataOpti[i];
-    if (!dp || !do_) return '';
-    const highlight = d.year % 10 === 0 && d.year > 0;
-    return `<tr style="background:${highlight ? 'rgba(0,229,160,0.04)' : (i%2===0?'transparent':'rgba(255,255,255,0.01)')}">
-      <td style="padding:8px 12px;font-weight:${highlight?700:400}">${d.year === 0 ? 'Départ' : 'An ' + d.year}</td>
-      <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:var(--muted)">${simFmt(d.invested)}</td>
-      <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:#ff7070">${simFmt(dp.capital)}</td>
-      <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;font-weight:600">${simFmt(d.capital)}</td>
-      <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:#c27aff">${simFmt(do_.capital)}</td>
-    </tr>`;
-  }).join('');
+
+  if (isMobile) {
+    // En mobile : 3 colonnes seulement — Année, Investi, + le scénario actif
+    const scenConf = {
+      pess: { label: 'Pessimiste', color: '#ff7070' },
+      real: { label: 'Réaliste',   color: 'var(--accent)' },
+      opti: { label: 'Optimiste',  color: '#c27aff' },
+    }[simTableScenario];
+    thead.innerHTML = `
+      <th class="sim-th sim-th-left">Année</th>
+      <th class="sim-th sim-th-right">Investi</th>
+      <th style="padding:8px 12px;text-align:right;color:${scenConf.color};font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border);font-weight:400">${scenConf.label}</th>
+    `;
+    tbody.innerHTML = simData.map((d, i) => {
+      const dp = simDataPess[i], do_ = simDataOpti[i];
+      if (!dp || !do_) return '';
+      const highlight = d.year % 10 === 0 && d.year > 0;
+      const scenVal = simTableScenario === 'pess' ? dp.capital : simTableScenario === 'opti' ? do_.capital : d.capital;
+      const scenColor = simTableScenario === 'pess' ? '#ff7070' : simTableScenario === 'opti' ? '#c27aff' : 'var(--text)';
+      const scenWeight = simTableScenario === 'real' ? '600' : '400';
+      return `<tr style="background:${highlight ? 'rgba(0,229,160,0.04)' : (i%2===0?'transparent':'rgba(255,255,255,0.01)')}">
+        <td style="padding:8px 12px;font-weight:${highlight?700:400}">${d.year === 0 ? 'Départ' : 'An ' + d.year}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:var(--muted)">${simFmt(d.invested)}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:${scenColor};font-weight:${scenWeight}">${simFmt(scenVal)}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    // Desktop : tableau complet 5 colonnes
+    thead.innerHTML = `
+      <th class="sim-th sim-th-left">Année</th>
+      <th class="sim-th sim-th-right">Investi</th>
+      <th style="padding:8px 12px;text-align:right;color:#ff7070;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border);font-weight:400">Pessimiste</th>
+      <th style="padding:8px 12px;text-align:right;color:var(--accent);font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border);font-weight:400">Réaliste</th>
+      <th style="padding:8px 12px;text-align:right;color:#c27aff;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid var(--border);font-weight:400">Optimiste</th>
+    `;
+    tbody.innerHTML = simData.map((d, i) => {
+      const dp = simDataPess[i], do_ = simDataOpti[i];
+      if (!dp || !do_) return '';
+      const highlight = d.year % 10 === 0 && d.year > 0;
+      return `<tr style="background:${highlight ? 'rgba(0,229,160,0.04)' : (i%2===0?'transparent':'rgba(255,255,255,0.01)')}">
+        <td style="padding:8px 12px;font-weight:${highlight?700:400}">${d.year === 0 ? 'Départ' : 'An ' + d.year}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:var(--muted)">${simFmt(d.invested)}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:#ff7070">${simFmt(dp.capital)}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;font-weight:600">${simFmt(d.capital)}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:'DM Mono',monospace;color:#c27aff">${simFmt(do_.capital)}</td>
+      </tr>`;
+    }).join('');
+  }
 }
 
 // ─── TRI POSITIONS ────────────────────────────────────────────────────────────
