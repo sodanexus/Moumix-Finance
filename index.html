@@ -159,7 +159,7 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
     <div class="total-stats">
       <div class="stat"><div class="stat-label">Capital investi</div><div class="stat-val" id="capitalInvested">—</div></div>
       <div class="stat"><div class="stat-label">Plus-value</div><div class="stat-val" id="totalPnl">—</div></div>
-      <div class="stat"><div class="stat-label">Mise à jour</div><div class="stat-val stat-val-sm" id="lastUpdateStat">—</div></div>
+      <div class="stat"><div class="stat-label" id="periodVarLabel">Variation 1S</div><div class="stat-val" id="periodVarStat">—</div></div>
     </div>
   </div>
 
@@ -1953,6 +1953,7 @@ function renderSummary() {
     luEl.style.color = 'var(--muted)';
   }
   updateBrowserTitle();
+  renderPeriodVariation();
 }
 
 function renderAll() { renderAccounts(); renderPositions(); renderAllocation(); renderByAccount(); renderSummary(); renderFilterToggles(); renderChart(); }
@@ -2249,7 +2250,28 @@ window.setChartPeriod = function(period, btn) {
   document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   renderChart();
+  renderPeriodVariation();
 };
+
+function renderPeriodVariation() {
+  const labelEl = document.getElementById('periodVarLabel');
+  const valEl = document.getElementById('periodVarStat');
+  if (!labelEl || !valEl) return;
+
+  const periodLabels = { '1S': '1 sem.', '1M': '1 mois', '3M': '3 mois', '1A': '1 an', 'Tout': 'Tout' };
+  labelEl.textContent = 'Variation ' + (periodLabels[currentChartPeriod] || currentChartPeriod);
+
+  const filtered = filterChartData([...patrimoineHistory].sort((a,b) => a.date < b.date ? -1 : 1), currentChartPeriod);
+  if (filtered.length < 2) { valEl.textContent = '—'; valEl.className = 'stat-val'; return; }
+
+  const first = parseFloat(filtered[0].value) || 0;
+  const last = parseFloat(filtered[filtered.length - 1].value) || 0;
+  const delta = last - first;
+  const deltaPct = first > 0 ? (delta / first * 100) : 0;
+
+  valEl.textContent = (delta >= 0 ? '+' : '') + fmtEur(delta) + ' (' + (deltaPct >= 0 ? '+' : '') + fmt(deltaPct) + '%)';
+  valEl.className = 'stat-val ' + (delta >= 0 ? 'gain-col' : 'loss-col');
+}
 
 function filterChartData(data, period) {
   if (period === 'Tout') return data;
