@@ -74,6 +74,54 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
 /* Sim legend chips */
 /* .sim-legend-chip removed — unused */
 .u-accent{color:var(--accent)}.u-muted{color:var(--muted)}
+
+/* ── Indices ticker (mobile scroll infini) ─────────────────────────── */
+.indices-ticker-outer{
+  margin-bottom:16px;
+  opacity:0.85;
+}
+.indices-ticker-track{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.indices-ticker-inner{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+#overviewIndicesClone{display:none}
+
+@keyframes indicesTicker{
+  0%  {transform:translateX(0)}
+  100%{transform:translateX(-50%)}
+}
+
+@media(max-width:768px){
+  .indices-ticker-outer{
+    overflow:hidden;
+    position:relative;
+    /* masques dégradés sur les bords */
+    -webkit-mask-image:linear-gradient(to right,transparent 0,#000 48px,#000 calc(100% - 48px),transparent 100%);
+    mask-image:linear-gradient(to right,transparent 0,#000 48px,#000 calc(100% - 48px),transparent 100%);
+  }
+  .indices-ticker-track{
+    display:flex;
+    flex-wrap:nowrap;
+    width:max-content;
+    gap:0;
+    animation:indicesTicker 28s linear infinite;
+  }
+  .indices-ticker-track:hover{animation-play-state:paused}
+  .indices-ticker-inner{
+    display:flex;
+    flex-wrap:nowrap;
+    gap:8px;
+    padding-right:8px;
+  }
+  #overviewIndicesClone{display:flex}
+  .index-pill{flex-shrink:0}
+}
 </style>
 </head>
 <body>
@@ -148,7 +196,12 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
   <!-- TAB: VUE D'ENSEMBLE -->
   <div class="tab-panel active" id="tab-overview">
     <!-- ── Indices marché ───────────────────────────────────────────── -->
-    <div id="overviewIndices" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;opacity:0.85"></div>
+    <div class="indices-ticker-outer" id="indicesTickerOuter">
+      <div class="indices-ticker-track" id="indicesTickerTrack">
+        <div id="overviewIndices" class="indices-ticker-inner"></div>
+        <div id="overviewIndicesClone" class="indices-ticker-inner" aria-hidden="true"></div>
+      </div>
+    </div>
 
   <div class="total-banner">
     <div class="flex-1">
@@ -3062,12 +3115,16 @@ async function loadNewsIndices() {
   ];
   const el = document.getElementById('overviewIndices') || document.getElementById('newsIndices');
   if (!el) return;
-  el.innerHTML = indices.map(i =>
+  const pillsHTML = indices.map(i =>
     `<div class="index-pill">
       <div class="index-pill-name">${i.name}</div>
       <div class="index-pill-val" id="idx-${i.sym.replace(/[^a-zA-Z0-9]/g,'_')}">…</div>
     </div>`
   ).join('');
+  el.innerHTML = pillsHTML;
+  // Remplir le clone pour le défilement infini mobile
+  const clone = document.getElementById('overviewIndicesClone');
+  if (clone) clone.innerHTML = pillsHTML.replace(/id="idx-/g, 'id="idx-clone-');
   await Promise.all(indices.map(async idx => {
     try {
       const data = await yfFetch(`/v8/finance/chart/${encodeURIComponent(idx.sym)}?interval=1d&range=1d`);
@@ -3081,9 +3138,13 @@ async function loadNewsIndices() {
         const chg = ((price - prev) / prev * 100);
         const changeHtml = `<span style="font-size:0.62rem;color:${chg>=0?'var(--gain)':'var(--loss)'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span>`;
         const priceStr = price > 1000 ? Math.round(price).toLocaleString('fr-FR') : price.toFixed(2);
-        el2.innerHTML = `<span style="font-size:0.75rem">${priceStr}</span> ${changeHtml}`;
+        const valHTML = `<span style="font-size:0.75rem">${priceStr}</span> ${changeHtml}`;
+        el2.innerHTML = valHTML;
         el2.classList.add('updated');
         setTimeout(() => el2.classList.remove('updated'), TIMING_INDEX_UPDATE);
+        // Mettre à jour aussi le clone (défilement infini mobile)
+        const el2c = document.getElementById('idx-clone-' + idx.sym.replace(/[^a-zA-Z0-9]/g,'_'));
+        if (el2c) el2c.innerHTML = valHTML;
       }
     } catch(e) {}
   }));
