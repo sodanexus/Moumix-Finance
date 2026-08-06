@@ -1,23 +1,18 @@
 name: Daily patrimoine snapshot
-
 on:
   schedule:
     - cron: '0 22 * * *'   # 22h UTC = minuit Paris (heure d'hiver) / 23h UTC = minuit Paris (heure d'été)
   workflow_dispatch:        # permet de lancer manuellement depuis GitHub
-
 jobs:
   snapshot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
-
       - name: Install dependencies
         run: npm install @supabase/supabase-js
-
       - name: Run snapshot
         env:
           SUPA_URL: ${{ secrets.SUPA_URL }}
