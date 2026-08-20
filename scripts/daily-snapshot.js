@@ -1,141 +1,196 @@
-// scripts/daily-snapshot.js
-// Calcule la valeur du patrimoine en temps réel pour chaque utilisateur :
-//   - Prix des positions boursières récupérés depuis Yahoo Finance
-//   - Solde fixe des comptes Livret / Immo / Autre pris depuis Supabase
-// Insère un point dans patrimoine_history (upsert sur user_id + date).
-//
-// Variables d'environnement requises :
-//   SUPA_URL            → URL de ton projet Supabase
-//   SUPA_KEY            → Service Role Key Supabase
-//   SNAPSHOT_USER_IDS   → UUIDs séparés par une virgule
+// Snapshot quotidien du patrimoine, enregistré dans patrimoine_history.
+// Les cours Yahoo Finance sont convertis en EUR et aucun total partiel n'est
+// écrit si une cotation ou un taux de change manque.
 
 import { createClient } from '@supabase/supabase-js';
 
 const SUPA_URL = process.env.SUPA_URL;
 const SUPA_KEY = process.env.SUPA_KEY;
-const USER_IDS = (process.env.USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+const USER_IDS = (process.env.USER_IDS || process.env.SNAPSHOT_USER_IDS || '')
+  .split(',')
+  .map(value => value.trim())
+  .filter(Boolean);
 
-// Cloudflare Worker Yahoo Finance proxy
 const YF_WORKER = 'https://yf-proxy.viqmusic-promo.workers.dev';
-const YF_BASE   = 'https://query1.finance.yahoo.com';
-
-// Types de comptes à solde fixe (pas de positions de marché)
+const YF_BASE = 'https://query1.finance.yahoo.com';
 const FIXED_ACCOUNT_TYPES = new Set(['Livret', 'Immo', 'Autre']);
+const FETCH_TIMEOUT_MS = 8000;
+const FETCH_ATTEMPTS = 3;
+
+function parisDateTime(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hourCycle: 'h23'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    hour: values.hour
+  };
+}
+
+const parisNow = parisDateTime();
+const today = parisNow.date;
 
 if (!SUPA_URL || !SUPA_KEY) {
   console.error('SUPA_URL ou SUPA_KEY manquant');
   process.exit(1);
 }
 if (USER_IDS.length === 0) {
-  console.error('SNAPSHOT_USER_IDS manquant ou vide');
+  console.error('SNAPSHOT_USER_IDS (ou USER_IDS) manquant ou vide');
   process.exit(1);
 }
 
+// Le workflow est déclenché à 22 h et 23 h UTC pour couvrir heure d'été et
+// heure d'hiver. Une seule exécution correspond à minuit à Paris.
+if (process.env.GITHUB_EVENT_NAME === 'schedule' && parisNow.hour !== '00') {
+  console.log(`Exécution ignorée : il est ${parisNow.hour} h à Paris.`);
+  process.exit(0);
+}
+
 const sb = createClient(SUPA_URL, SUPA_KEY, {
-  auth: { persistSession: false }
+  auth: { persistSession: false, autoRefreshToken: false }
 });
 
-const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// Récupère le prix actuel d'un symbole via Yahoo Finance
-async function fetchPrice(symbol) {
-  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-  const url = YF_BASE + path;
-  try {
-    const res = await fetch(`${YF_WORKER}?url=${encodeURIComponent(url)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const result = data?.chart?.result?.[0];
-    const price = result?.meta?.regularMarketPrice
-               || result?.indicators?.quote?.[0]?.close?.slice(-1)[0];
-    if (!price) throw new Error('prix introuvable');
-    return price;
-  } catch (e) {
-    console.warn(`  ⚠ fetchPrice(${symbol}) → ${e.message}`);
-    return null;
+async function fetchYahoo(path) {
+  const target = YF_BASE + path;
+  let lastError;
+
+  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(`${YF_WORKER}?url=${encodeURIComponent(target)}`, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt < FETCH_ATTEMPTS) await wait(400 * attempt);
+    }
   }
+
+  throw lastError || new Error('Yahoo Finance indisponible');
+}
+
+async function fetchQuote(symbol) {
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+  const data = await fetchYahoo(path);
+  const result = data?.chart?.result?.[0];
+  const meta = result?.meta || {};
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  const fallbackClose = [...closes].reverse().find(value => Number.isFinite(value));
+  const price = Number(meta.regularMarketPrice ?? fallbackClose);
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error(`prix introuvable pour ${symbol}`);
+  }
+  if (!meta.currency) {
+    throw new Error(`devise introuvable pour ${symbol}`);
+  }
+
+  return { price, currency: meta.currency };
+}
+
+const fxCache = new Map([['EUR', 1]]);
+
+async function fxToEur(currency) {
+  const baseCurrency = String(currency || 'EUR').toUpperCase();
+  if (fxCache.has(baseCurrency)) return fxCache.get(baseCurrency);
+
+  const quote = await fetchQuote(`${baseCurrency}EUR=X`);
+  if (!Number.isFinite(quote.price) || quote.price <= 0) {
+    throw new Error(`taux ${baseCurrency}/EUR introuvable`);
+  }
+  fxCache.set(baseCurrency, quote.price);
+  return quote.price;
+}
+
+async function quoteInEur(symbol) {
+  const quote = await fetchQuote(symbol);
+  const rawCurrency = String(quote.currency || 'EUR');
+  const isPence = rawCurrency === 'GBp' || rawCurrency.toUpperCase() === 'GBX';
+  const currency = isPence ? 'GBP' : rawCurrency.toUpperCase();
+  const rate = await fxToEur(currency);
+  const priceEur = quote.price * (isPence ? 0.01 : 1) * rate;
+
+  if (!Number.isFinite(priceEur) || priceEur <= 0) {
+    throw new Error(`conversion EUR impossible pour ${symbol}`);
+  }
+  return { ...quote, priceEur };
 }
 
 async function snapshotUser(userId) {
-  // 1. Récupérer les comptes
-  const { data: accounts, error: accErr } = await sb
+  const { data: accounts = [], error: accountsError } = await sb
     .from('accounts')
     .select('id, type, solde')
     .eq('user_id', userId);
-  if (accErr) throw new Error(`accounts error: ${accErr.message}`);
+  if (accountsError) throw new Error(`accounts: ${accountsError.message}`);
 
-  // Somme des comptes à solde fixe
   const fixedTotal = accounts
-    .filter(a => FIXED_ACCOUNT_TYPES.has(a.type))
-    .reduce((s, a) => s + (parseFloat(a.solde) || 0), 0);
-
+    .filter(account => FIXED_ACCOUNT_TYPES.has(account.type))
+    .reduce((sum, account) => sum + (Number(account.solde) || 0), 0);
   const fixedIds = new Set(
-    accounts.filter(a => FIXED_ACCOUNT_TYPES.has(a.type)).map(a => a.id)
+    accounts.filter(account => FIXED_ACCOUNT_TYPES.has(account.type)).map(account => account.id)
   );
 
-  // 2. Récupérer les positions de marché
-  const { data: positions, error: posErr } = await sb
+  const { data: positions = [], error: positionsError } = await sb
     .from('positions')
     .select('symbol, qty, account_id')
     .eq('user_id', userId);
-  if (posErr) throw new Error(`positions error: ${posErr.message}`);
+  if (positionsError) throw new Error(`positions: ${positionsError.message}`);
 
-  const marketPositions = positions.filter(p => !fixedIds.has(p.account_id));
+  const quantities = new Map();
+  positions
+    .filter(position => !fixedIds.has(position.account_id))
+    .forEach(position => {
+      quantities.set(position.symbol, (quantities.get(position.symbol) || 0) + (Number(position.qty) || 0));
+    });
 
-  // 3. Regrouper par symbole pour minimiser les appels Yahoo Finance
-  const symbolMap = {};
-  for (const p of marketPositions) {
-    symbolMap[p.symbol] = (symbolMap[p.symbol] || 0) + parseFloat(p.qty || 0);
+  const symbols = [...quantities.keys()];
+  console.log(`  ${symbols.length} cotation(s) : ${symbols.join(', ') || 'aucune'}`);
+
+  // Si un seul cours ou taux échoue, Promise.all s'arrête avant l'upsert :
+  // le dernier snapshot valide est donc conservé.
+  const quotes = new Map(await Promise.all(
+    symbols.map(async symbol => [symbol, await quoteInEur(symbol)])
+  ));
+
+  let marketTotal = 0;
+  for (const [symbol, qty] of quantities) {
+    marketTotal += quotes.get(symbol).priceEur * qty;
   }
 
-  // 4. Récupérer les prix en parallèle
-  const symbols = Object.keys(symbolMap);
-  console.log(`  Fetching ${symbols.length} prix : ${symbols.join(', ')}`);
-
-  const priceEntries = await Promise.all(
-    symbols.map(async sym => [sym, await fetchPrice(sym)])
-  );
-  const prices = Object.fromEntries(priceEntries);
-
-  // 5. Calculer la valeur totale
-  let posTotal = 0;
-  let missingPrices = 0;
-  for (const [sym, qty] of Object.entries(symbolMap)) {
-    const price = prices[sym];
-    if (price == null) { missingPrices++; continue; }
-    posTotal += price * qty;
-  }
-
-  if (missingPrices > 0) {
-    console.warn(`  ⚠ ${missingPrices} symbole(s) sans prix — valeur partielle`);
-  }
-
-  const totalValue = Math.round((posTotal + fixedTotal) * 100) / 100;
-
-  // 6. Upsert dans patrimoine_history
-  const { error: upsertErr } = await sb
+  const totalValue = Math.round((marketTotal + fixedTotal) * 100) / 100;
+  const { error: upsertError } = await sb
     .from('patrimoine_history')
     .upsert(
       { user_id: userId, date: today, value: totalValue },
       { onConflict: 'user_id,date' }
     );
-  if (upsertErr) throw new Error(`upsert error: ${upsertErr.message}`);
+  if (upsertError) throw new Error(`patrimoine_history: ${upsertError.message}`);
 
   console.log(`✓ ${userId.slice(0, 8)}… → ${totalValue.toLocaleString('fr-FR')} € (${today})`);
-  console.log(`  dont positions marché : ${Math.round(posTotal).toLocaleString('fr-FR')} € | fixe : ${Math.round(fixedTotal).toLocaleString('fr-FR')} €`);
+  console.log(`  marché : ${Math.round(marketTotal).toLocaleString('fr-FR')} € | fixe : ${Math.round(fixedTotal).toLocaleString('fr-FR')} €`);
 }
 
-(async () => {
+async function main() {
   console.log(`Snapshot du ${today} pour ${USER_IDS.length} utilisateur(s)…\n`);
-  let ok = 0;
-  for (const uid of USER_IDS) {
+  let succeeded = 0;
+
+  for (const userId of USER_IDS) {
     try {
-      await snapshotUser(uid);
-      ok++;
-    } catch (e) {
-      console.error(`✗ ${uid.slice(0, 8)}… → ${e.message}`);
+      await snapshotUser(userId);
+      succeeded++;
+    } catch (error) {
+      console.error(`✗ ${userId.slice(0, 8)}… → ${error.message}`);
     }
   }
-  console.log(`\n${ok}/${USER_IDS.length} snapshot(s) OK`);
-  if (ok < USER_IDS.length) process.exit(1);
-})();
+
+  console.log(`\n${succeeded}/${USER_IDS.length} snapshot(s) OK`);
+  if (succeeded < USER_IDS.length) process.exitCode = 1;
+}
+
+await main();

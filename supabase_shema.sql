@@ -1,104 +1,200 @@
--- ============================================================
--- schema.sql — Moumix Finance · Schéma Supabase
--- À exécuter dans l'éditeur SQL de votre projet Supabase
--- ============================================================
+-- ============================================================================
+-- Moumix Finance — schéma complet pour une NOUVELLE installation Supabase
+-- ============================================================================
+-- Ce fichier n'est pas une migration et n'est jamais exécuté par l'application.
+-- Ne l'exécutez pas aveuglément sur une base existante : la mise à jour livrée
+-- fonctionne avec les données actuelles sans aucune migration.
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- ── TABLE : accounts ─────────────────────────────────────────
--- Comptes patrimoniaux (PEA, CTO, Livret, Immo, Autre…)
-CREATE TABLE IF NOT EXISTS accounts (
+-- ── Comptes ──────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.accounts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
-  type        TEXT NOT NULL CHECK (type IN ('PEA', 'CTO', 'Livret', 'Immo', 'Autre')),
-  solde       NUMERIC(15, 2) NOT NULL DEFAULT 0,  -- Solde fixe (pour comptes non-marché)
+  type        TEXT NOT NULL CHECK (type IN (
+                'PEA', 'CTO', 'PEE', 'PER', 'AV', 'Crypto',
+                'Livret', 'Immo', 'Autre'
+              )),
+  solde       NUMERIC(24, 2),
   currency    TEXT NOT NULL DEFAULT 'EUR',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_user_id
+  ON public.accounts(user_id);
 
-ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+-- ── Positions ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.positions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  account_id      UUID NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+  symbol          TEXT NOT NULL,
+  name            TEXT NOT NULL DEFAULT '',
+  exchange        TEXT NOT NULL DEFAULT '',
+  currency        TEXT NOT NULL DEFAULT 'EUR',
+  qty             NUMERIC(24, 8) NOT NULL CHECK (qty > 0),
+  price           NUMERIC(24, 10) NOT NULL DEFAULT 0 CHECK (price >= 0),
+  current         NUMERIC(24, 10) NOT NULL DEFAULT 0 CHECK (current >= 0),
+  change          NUMERIC(24, 10),
+  change_percent  NUMERIC(18, 8),
+  last_updated    BIGINT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-CREATE POLICY "accounts_user_isolation" ON accounts
-  FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+CREATE INDEX IF NOT EXISTS idx_positions_user_id
+  ON public.positions(user_id);
+CREATE INDEX IF NOT EXISTS idx_positions_account_id
+  ON public.positions(account_id);
+CREATE INDEX IF NOT EXISTS idx_positions_symbol
+  ON public.positions(symbol);
 
-
--- ── TABLE : positions ─────────────────────────────────────────
--- Positions boursières (ETF, actions…) rattachées à un compte
-CREATE TABLE IF NOT EXISTS positions (
+-- ── Prélèvements récurrents ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.prelevements (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  account_id  UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-  symbol      TEXT NOT NULL,       -- Ticker Yahoo Finance (ex: "IWDA.AS")
-  qty         NUMERIC(15, 6) NOT NULL DEFAULT 0,
+  name        TEXT NOT NULL,
+  amount      NUMERIC(24, 2) NOT NULL CHECK (amount > 0),
+  freq        TEXT NOT NULL CHECK (freq IN ('mensuel', 'trimestriel', 'annuel')),
+  cat         TEXT NOT NULL CHECK (cat IN ('courtage', 'frais', 'credit', 'abonnement', 'autre')),
+  split       INTEGER NOT NULL DEFAULT 1 CHECK (split BETWEEN 1 AND 99),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_positions_user_id    ON positions(user_id);
-CREATE INDEX IF NOT EXISTS idx_positions_account_id ON positions(account_id);
-CREATE INDEX IF NOT EXISTS idx_positions_symbol     ON positions(symbol);
+CREATE INDEX IF NOT EXISTS idx_prelevements_user_id
+  ON public.prelevements(user_id);
 
-ALTER TABLE positions ENABLE ROW LEVEL SECURITY;
+-- ── Historique des transactions ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.transactions (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type          TEXT NOT NULL CHECK (type IN ('buy', 'sell', 'edit')),
+  symbol        TEXT NOT NULL,
+  name          TEXT NOT NULL DEFAULT '',
+  qty           NUMERIC(24, 8) NOT NULL CHECK (qty > 0),
+  price         NUMERIC(24, 10) NOT NULL CHECK (price >= 0),
+  account_name  TEXT NOT NULL DEFAULT '',
+  ts            BIGINT NOT NULL,
+  old_qty       NUMERIC(24, 8),
+  old_price     NUMERIC(24, 10),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-CREATE POLICY "positions_user_isolation" ON positions
-  FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_ts
+  ON public.transactions(user_id, ts DESC);
 
-
--- ── TABLE : patrimoine_history ────────────────────────────────
--- Historique journalier de la valeur totale du patrimoine
--- Alimenté automatiquement par le script GitHub Actions daily-snapshot.js
-CREATE TABLE IF NOT EXISTS patrimoine_history (
+-- ── Historique journalier du patrimoine ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.patrimoine_history (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   date        DATE NOT NULL,
-  value       NUMERIC(15, 2) NOT NULL,
+  value       NUMERIC(24, 2) NOT NULL CHECK (value >= 0),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- Un seul snapshot par utilisateur par jour
   UNIQUE(user_id, date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_patrimoine_user_date ON patrimoine_history(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_patrimoine_user_date
+  ON public.patrimoine_history(user_id, date DESC);
 
-ALTER TABLE patrimoine_history ENABLE ROW LEVEL SECURITY;
+-- ── Objectifs ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.goals (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  target      NUMERIC(24, 2) NOT NULL CHECK (target > 0),
+  current     NUMERIC(24, 2) NOT NULL DEFAULT 0 CHECK (current >= 0),
+  emoji       TEXT NOT NULL DEFAULT '🎯',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-CREATE POLICY "patrimoine_user_isolation" ON patrimoine_history
-  FOR ALL
+CREATE INDEX IF NOT EXISTS idx_goals_user_id
+  ON public.goals(user_id);
+
+-- ── updated_at ───────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_accounts_updated_at ON public.accounts;
+CREATE TRIGGER trg_accounts_updated_at
+  BEFORE UPDATE ON public.accounts
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_positions_updated_at ON public.positions;
+CREATE TRIGGER trg_positions_updated_at
+  BEFORE UPDATE ON public.positions
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_prelevements_updated_at ON public.prelevements;
+CREATE TRIGGER trg_prelevements_updated_at
+  BEFORE UPDATE ON public.prelevements
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_goals_updated_at ON public.goals;
+CREATE TRIGGER trg_goals_updated_at
+  BEFORE UPDATE ON public.goals
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ── RLS : chaque utilisateur ne voit que ses lignes ─────────────────────────
+ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.positions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prelevements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.patrimoine_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS accounts_user_isolation ON public.accounts;
+CREATE POLICY accounts_user_isolation ON public.accounts
+  FOR ALL TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS positions_user_isolation ON public.positions;
+CREATE POLICY positions_user_isolation ON public.positions
+  FOR ALL TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
--- ── Triggers updated_at ───────────────────────────────────────
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+DROP POLICY IF EXISTS prelevements_user_isolation ON public.prelevements;
+CREATE POLICY prelevements_user_isolation ON public.prelevements
+  FOR ALL TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
-CREATE TRIGGER trg_accounts_updated_at
-  BEFORE UPDATE ON accounts
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP POLICY IF EXISTS transactions_user_isolation ON public.transactions;
+CREATE POLICY transactions_user_isolation ON public.transactions
+  FOR ALL TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
-CREATE TRIGGER trg_positions_updated_at
-  BEFORE UPDATE ON positions
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP POLICY IF EXISTS patrimoine_user_isolation ON public.patrimoine_history;
+CREATE POLICY patrimoine_user_isolation ON public.patrimoine_history
+  FOR ALL TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS goals_user_isolation ON public.goals;
+CREATE POLICY goals_user_isolation ON public.goals
+  FOR ALL TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
--- ── Grants explicites (requis depuis mai 2026) ────────────────
--- Accès service_role uniquement (GitHub Actions via SUPA_KEY)
--- Les utilisateurs accèdent via RLS avec le rôle authenticated
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.accounts           TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.positions          TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.patrimoine_history TO authenticated;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.accounts           TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.positions          TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.patrimoine_history TO service_role;
+GRANT USAGE ON SCHEMA public TO authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  public.accounts,
+  public.positions,
+  public.prelevements,
+  public.transactions,
+  public.patrimoine_history,
+  public.goals
+TO authenticated, service_role;
