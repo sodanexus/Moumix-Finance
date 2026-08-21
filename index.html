@@ -1103,22 +1103,33 @@ async function savePosition(position) {
   if (error) throw error;
 }
 
-async function savePositionPrices(changedPositions) {
-  const results = await Promise.all(changedPositions.map(p => sb
-    .from('positions')
-    .update({
-      current: p.current ?? 0,
-      change: p.change ?? null,
-      change_percent: p.changePercent ?? null,
-      last_updated: p.lastUpdated ?? null
-    })
-    .eq('id', p.id)
-    .eq('user_id', currentUser.id)
-    .select('id')
-    .maybeSingle()
-  ));
-  const errors = results.map(r => r.error || (!r.data ? new Error('Position introuvable pendant l’actualisation') : null)).filter(Boolean);
+async function savePositionPrices(changedPositions, userId) {
+  if (!userId) throw new Error('Session absente pendant l’actualisation');
+  const results = await Promise.all(changedPositions.map(async p => {
+    const { data, error } = await sb
+      .from('positions')
+      .update({
+        current: p.current ?? 0,
+        change: p.change ?? null,
+        change_percent: p.changePercent ?? null,
+        last_updated: p.lastUpdated ?? null
+      })
+      .eq('id', p.id)
+      .eq('user_id', userId)
+      .select('id')
+      .maybeSingle();
+    return { id: p.id, data, error };
+  }));
+
+  // Une ligne absente n'est pas une panne : elle a pu être supprimée depuis
+  // un autre onglet/appareil pendant la récupération des cotations. On ne la
+  // recrée surtout pas ; l'appelant la retire simplement de son état local.
+  const errors = results.map(result => result.error).filter(Boolean);
   if (errors.length) throw errors[0];
+  return {
+    updatedIds: results.filter(result => result.data).map(result => result.id),
+    missingIds: results.filter(result => !result.data).map(result => result.id),
+  };
 }
 
 async function savePrelevement(prelevement) {
@@ -1837,6 +1848,8 @@ let _lastPriceRefresh = 0; // timestamp du dernier refresh de prix
 async function refreshAllPrices() {
   if (positions.length === 0) return;
   if (_isRefreshing) return;
+  const refreshUserId = currentUser?.id;
+  if (!refreshUserId) return;
   _isRefreshing = true;
   eurRates = {}; // invalider le cache des taux à chaque refresh pour ne pas utiliser des taux périmés
   const btn = document.getElementById('refreshBtn');
@@ -1869,24 +1882,49 @@ async function refreshAllPrices() {
       return;
     }
 
-    const changedPositions = [];
-    const nextPositions = positions.map(p => {
-      if (priceMap[p.symbol]) {
-        const newPrice = priceMap[p.symbol].priceEur ?? p.current;
-        const newChange = priceMap[p.symbol].change ?? p.change;
-        const newChangePct = priceMap[p.symbol].changePercent ?? p.changePercent;
-        const updated = { ...p, current: newPrice, change: newChange, changePercent: newChangePct, lastUpdated: Date.now() };
-        changedPositions.push(updated);
-        return updated;
-      }
-      return p;
+    const quoteTimestamp = Date.now();
+    const changedPositions = positions.flatMap(p => {
+      if (!priceMap[p.symbol]) return [];
+      return [{
+        ...p,
+        current: priceMap[p.symbol].priceEur ?? p.current,
+        change: priceMap[p.symbol].change ?? p.change,
+        changePercent: priceMap[p.symbol].changePercent ?? p.changePercent,
+        lastUpdated: quoteTimestamp,
+      }];
     });
 
     // Seuls les champs de cotation sont mis à jour : un onglet ancien ne peut
     // pas écraser une quantité ou un PRU modifié ailleurs.
-    await savePositionPrices(changedPositions);
-    positions = nextPositions;
-    changedPositions.forEach(p => {
+    const { updatedIds, missingIds } = await savePositionPrices(changedPositions, refreshUserId);
+
+    // Si l'utilisateur s'est déconnecté ou a changé de session entre-temps,
+    // on ne fusionne pas le résultat de l'ancienne actualisation.
+    if (currentUser?.id !== refreshUserId) return;
+
+    const updatedIdSet = new Set(updatedIds);
+    const missingIdSet = new Set(missingIds);
+    const updatesById = new Map(changedPositions
+      .filter(p => updatedIdSet.has(p.id))
+      .map(p => [p.id, p]));
+
+    // Fusionne uniquement les cotations dans l'état ACTUEL. Une quantité, un
+    // PRU, un ajout ou une suppression effectué pendant le refresh est préservé.
+    positions = positions
+      .filter(p => !missingIdSet.has(p.id))
+      .map(p => {
+        const quote = updatesById.get(p.id);
+        return quote ? {
+          ...p,
+          current: quote.current,
+          change: quote.change,
+          changePercent: quote.changePercent,
+          lastUpdated: quote.lastUpdated,
+        } : p;
+      });
+    missingIds.forEach(id => { delete positionHistory[id]; });
+    const activePositionIds = new Set(positions.map(p => p.id));
+    changedPositions.filter(p => updatedIdSet.has(p.id) && activePositionIds.has(p.id)).forEach(p => {
       if (!positionHistory[p.id]) positionHistory[p.id] = [];
       positionHistory[p.id].push(p.current);
       if (positionHistory[p.id].length > 20) positionHistory[p.id].shift();
@@ -1895,11 +1933,19 @@ async function refreshAllPrices() {
     await snapshotPatrimoine();
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    if (badge) badge.textContent = updatedSymbols.length === uniqueSymbols.length
-      ? `Actualisé à ${time}`
-      : `${updatedSymbols.length}/${uniqueSymbols.length} actualisés à ${time}`;
-    if (updatedSymbols.length < uniqueSymbols.length) {
-      showToast(`${uniqueSymbols.length - updatedSymbols.length} cours indisponible(s) : les anciennes valeurs sont conservées.`, 'error');
+    const remainingSymbols = [...new Set(positions.map(p => p.symbol))];
+    const refreshedSymbols = remainingSymbols.filter(symbol => priceMap[symbol]);
+    const unavailableSymbols = remainingSymbols.filter(symbol => !priceMap[symbol]);
+    if (badge) badge.textContent = remainingSymbols.length === 0
+      ? `Portefeuille synchronisé à ${time}`
+      : unavailableSymbols.length === 0
+        ? `Actualisé à ${time}`
+        : `${refreshedSymbols.length}/${remainingSymbols.length} actualisés à ${time}`;
+    if (unavailableSymbols.length > 0) {
+      showToast(`${unavailableSymbols.length} cours indisponible(s) : les anciennes valeurs sont conservées.`, 'error');
+    }
+    if (missingIds.length > 0) {
+      showToast(`Synchronisation : ${missingIds.length} position${missingIds.length > 1 ? 's n’étaient' : ' n’était'} plus présente${missingIds.length > 1 ? 's' : ''} dans la base.`, 'success');
     }
     renderAll();
 
