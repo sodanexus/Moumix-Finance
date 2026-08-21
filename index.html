@@ -128,6 +128,7 @@ table{font-size:0.72rem}th,td{padding:8px 6px}.ticker-sym{font-size:0.78rem}.tic
 body.modal-open{overflow:hidden}
 .filter-toggle{font-family:'Inter',sans-serif}
 .app{
+  padding-top:max(24px,calc(env(safe-area-inset-top) + 12px));
   padding-left:max(24px,env(safe-area-inset-left));
   padding-right:max(24px,env(safe-area-inset-right));
   padding-bottom:max(24px,env(safe-area-inset-bottom));
@@ -166,13 +167,14 @@ textarea:focus-visible,.del-btn:focus-visible{
 
 @media(max-width:768px){
   .app{
+    padding-top:max(14px,calc(env(safe-area-inset-top) + 10px));
     padding-left:max(12px,env(safe-area-inset-left));
     padding-right:max(12px,env(safe-area-inset-right));
     padding-bottom:max(88px,calc(72px + env(safe-area-inset-bottom)));
   }
   .tabs-nav{
     position:sticky;
-    top:0;
+    top:env(safe-area-inset-top);
     z-index:40;
     margin-left:-12px;
     margin-right:-12px;
