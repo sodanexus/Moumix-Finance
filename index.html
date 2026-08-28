@@ -342,7 +342,7 @@ textarea:focus-visible,.del-btn:focus-visible,.mobile-actions-toggle:focus-visib
 <!-- LOADING -->
 <div class="loading-overlay hidden" id="loadingOverlay">
   <span class="spin" style="display:inline-block;width:32px;height:32px;border:3px solid #1e2530;border-top-color:#00e5a0;border-radius:50%;animation:spin 0.7s linear infinite"></span>
-  <div style="font-size:0.8rem;color:#5a6478">Chargement…</div>
+  <div id="loadingStatus" role="status" aria-live="polite" style="font-size:0.8rem;color:#8d98aa;text-align:center;padding:0 24px">Chargement…</div>
 </div>
 
 <!-- LOGIN -->
@@ -357,13 +357,13 @@ textarea:focus-visible,.del-btn:focus-visible,.mobile-actions-toggle:focus-visib
     <form onsubmit="event.preventDefault(); submitAuth()" autocomplete="on">
       <div class="form-row">
         <label for="auth-email">Email</label>
-        <input type="email" id="auth-email" name="email" placeholder="julien@exemple.com" autocomplete="email">
+        <input type="email" id="auth-email" name="email" placeholder="julien@exemple.com" autocomplete="email" oninput="syncAuthSubmitButton()">
       </div>
       <div class="form-row">
         <label for="auth-password">Mot de passe</label>
         <input type="password" id="auth-password" name="password" placeholder="••••••••" autocomplete="current-password">
       </div>
-      <div id="auth-error" class="login-error"></div>
+      <div id="auth-error" class="login-error" role="status" aria-live="polite"></div>
       <div style="margin-top:16px">
         <button type="submit" class="btn btn-primary" style="width:100%;padding:11px" id="authSubmitBtn">Se connecter</button>
       </div>
@@ -889,19 +889,8 @@ window.addEventListener('unhandledrejection', function(event) {
 // ─── SUPABASE INIT ────────────────────────────────────────────────────────────
 const SUPA_URL = 'https://tjmbrwazzuhbsufxbjpu.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqbWJyd2F6enVoYnN1ZnhianB1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyMTAwNTAsImV4cCI6MjA4Nzc4NjA1MH0.d4tplwCcMvcelCqqTMA6oh4Ur2phngwamrIJOjBXxog';
-// Nettoie le token Supabase expiré AVANT l'init du SDK
-// (sinon le SDK tente un refresh qui ne revient jamais et bloque tout)
-try {
-  const supaTokenKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
-  if (supaTokenKey) {
-    const tokenData = JSON.parse(localStorage.getItem(supaTokenKey) || '{}');
-    const expiresAt = tokenData?.expires_at;
-    if (!expiresAt || Date.now() / 1000 > expiresAt) {
-      localStorage.removeItem(supaTokenKey);
-    }
-  }
-} catch(e) {}
-
+// Le SDK renouvelle les sessions expirées. Ne pas supprimer leurs refresh tokens
+// ni ceux d'une autre application hébergée sur la même origine GitHub Pages.
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
@@ -994,58 +983,108 @@ const TIMING_SIM_DEBOUNCE    = 80;   // debounce simulateur
 const TIMING_TICKER_SEARCH   = 300;  // debounce recherche ticker
 const TIMING_TICKER_TIMEOUT  = 3000; // timeout abort recherche ticker
 const TIMING_LIVRET_FOCUS    = 50;   // délai focus input livret
-const TIMING_SDK_INIT        = 800;  // attente init SDK Supabase au boot
 const TIMING_HISTORY_CLOSE   = 1800; // délai auto-fermeture modale historique après import
 const TIMING_TAB_TRANSITION  = 160;  // durée animation sortie d'onglet avant affichage suivant
 const TIMING_LOAD_TIMEOUT    = 8000; // timeout chargement des données Supabase
 const TIMING_SUPABASE_RETRY  = 1000; // délai avant retry Supabase après timeout
+const JWT_RETRY_DELAYS       = [1000, 2000, 4000]; // max. 4 lectures, jamais de nouvelle connexion automatique
 const TIMING_PROXY_FETCH     = 5000; // timeout fetch via proxy CORS (Yahoo Finance & RSS)
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 let authTab = 'login';
+let _authSubmitTask = null;
+let _appInitTask = null;
+let _appReadyTask = null;
+let _authUser = null;          // session SDK, distincte des données réellement chargées
+let _authEventVersion = 0;
+let _failedLoad = null;
+
+function canRetryDataLoad() {
+  return authTab === 'login' && _failedLoad && _failedLoad.kind !== 'auth_required' &&
+    document.getElementById('auth-email').value.trim().toLowerCase() === _failedLoad.email.toLowerCase();
+}
+
+function syncAuthSubmitButton() {
+  const busy = Boolean(_authSubmitTask || _appInitTask);
+  const btn = document.getElementById('authSubmitBtn');
+  btn.disabled = busy;
+  btn.setAttribute('aria-busy', String(busy));
+  btn.textContent = _appInitTask ? 'Chargement…' : _authSubmitTask ? 'Connexion…' :
+    canRetryDataLoad() ? 'Réessayer' : authTab === 'login' ? 'Se connecter' : 'Créer le compte';
+  document.getElementById('tabLogin').disabled = busy;
+  document.getElementById('tabSignup').disabled = busy;
+}
+
+function setAuthLoadStatus(message) {
+  document.getElementById('loadingStatus').textContent = message;
+  const status = document.getElementById('auth-error');
+  status.style.color = 'var(--text)';
+  status.textContent = message;
+}
 
 function switchAuthTab(tab) {
+  if (_authSubmitTask || _appInitTask) return;
   authTab = tab;
   document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
   document.getElementById('tabSignup').classList.toggle('active', tab === 'signup');
-  document.getElementById('authSubmitBtn').textContent = tab === 'login' ? 'Se connecter' : 'Créer le compte';
   document.getElementById('auth-error').textContent = '';
+  syncAuthSubmitButton();
 }
 
 async function submitAuth() {
+  if (_authSubmitTask || _appInitTask) return;
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
   const errEl = document.getElementById('auth-error');
-  const btn = document.getElementById('authSubmitBtn');
+  errEl.style.color = 'var(--loss)';
   errEl.textContent = '';
-  if (!email || !password) { errEl.textContent = 'Email et mot de passe requis'; return; }
-  btn.disabled = true; btn.textContent = '…';
+  if (!email || (!password && !canRetryDataLoad())) { errEl.textContent = 'Email et mot de passe requis'; return; }
+  const task = {};
+  _authSubmitTask = task;
+  syncAuthSubmitButton();
   try {
+    // Après un échec de lecture, réutiliser la session : recréer un JWT ne ferait
+    // que recommencer l'attente si son horodatage est momentanément rejeté.
+    if (canRetryDataLoad()) {
+      const { data, error } = await sb.auth.getSession();
+      if (_authSubmitTask !== task) return;
+      if (!error && data.session?.user?.id === _failedLoad?.userId) {
+        _authUser = data.session.user;
+        await initApp(data.session.user);
+        return;
+      }
+      if (!password) { errEl.textContent = 'Veuillez saisir votre mot de passe pour vous reconnecter.'; return; }
+    }
     let res;
     if (authTab === 'login') {
       res = await sb.auth.signInWithPassword({ email, password });
     } else {
       res = await sb.auth.signUp({ email, password });
-      if (!res.error && res.data.user && !res.data.session) {
-        errEl.style.color = 'var(--gain)';
-        errEl.textContent = 'Compte créé ! Vérifiez votre email pour confirmer.';
-        btn.disabled = false; btn.textContent = 'Créer le compte';
-        return;
-      }
     }
-    if (res.error) {
-      errEl.style.color = 'var(--loss)';
-      const msg = res.error.message;
-      errEl.textContent = msg.includes('Invalid login') ? 'Email ou mot de passe incorrect' :
-                          msg.includes('already registered') ? 'Cet email est déjà utilisé' : msg;
-      btn.disabled = false;
-      btn.textContent = authTab === 'login' ? 'Se connecter' : 'Créer le compte';
+    if (_authSubmitTask !== task) return;
+    if (res.error) throw res.error;
+    if (authTab === 'signup' && res.data.user && !res.data.session) {
+      errEl.style.color = 'var(--gain)';
+      errEl.textContent = 'Compte créé ! Vérifiez votre email pour confirmer.';
+      return;
     }
-    // Si succès, onAuthStateChange gère la suite
+    if (!res.data.session?.user) throw new Error('Session indisponible — veuillez réessayer.');
+    _authUser = res.data.session.user;
+    // Même point d'entrée que le démarrage et les événements SDK ; un seul
+    // chargement peut tourner pour cet utilisateur.
+    await initApp(res.data.session.user);
   } catch(e) {
-    errEl.textContent = 'Erreur réseau';
-    btn.disabled = false;
-    btn.textContent = authTab === 'login' ? 'Se connecter' : 'Créer le compte';
+    if (_authSubmitTask !== task) return;
+    errEl.style.color = 'var(--loss)';
+    const msg = e.message || 'Erreur réseau — veuillez réessayer.';
+    errEl.textContent = /Invalid login/i.test(msg) ? 'Email ou mot de passe incorrect' :
+      /already registered/i.test(msg) ? 'Cet email est déjà utilisé' :
+      /fetch|network|load failed/i.test(msg) ? 'Erreur réseau — veuillez réessayer.' : msg;
+  } finally {
+    if (_authSubmitTask === task) {
+      _authSubmitTask = null;
+      syncAuthSubmitButton();
+    }
   }
 }
 
@@ -1065,12 +1104,11 @@ document.addEventListener('click', e => {
 });
 async function signOut() {
   try {
-    await sb.auth.signOut();
+    const { error } = await sb.auth.signOut();
+    if (error) throw error;
   } catch(e) {
-    console.error('[Moumix] signOut error:', e);
-  } finally {
-    // Nettoie les tokens Supabase du localStorage quoi qu'il arrive
-    Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
+    console.error('[Moumix] signOut error:', e.message);
+    showToast('Déconnexion impossible pour le moment. Réessayez.', 'error');
   }
 }
 
@@ -1164,70 +1202,98 @@ function exportDataBackup() {
 }
 
 // ─── DB LOAD ──────────────────────────────────────────────────────────────────
-async function loadAllData() {
-  const uid = currentUser.id;
+function dataLoadError(kind, queryErrors = []) {
+  const error = new Error(`load_failed: ${kind}`);
+  error.kind = kind;
+  error.queryErrors = queryErrors;
+  return error;
+}
 
-  // Timeout de sécurité — si Supabase ne répond pas en TIMING_LOAD_TIMEOUT on abandonne
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMING_LOAD_TIMEOUT));
-  const [accRes, posRes, prelRes, txRes, histRes, goalsRes] = await Promise.race([
-    Promise.all([sb.from('accounts').select('*').eq('user_id', uid).order('created_at'),
-      sb.from('positions').select('*').eq('user_id', uid).order('created_at'),
-      sb.from('prelevements').select('*').eq('user_id', uid).order('created_at'),
-      sb.from('transactions').select('*').eq('user_id', uid).order('ts', { ascending: false }),
-      sb.from('patrimoine_history').select('*').eq('user_id', uid).order('date'),
-      sb.from('goals').select('*').eq('user_id', uid).order('created_at'),
-    ]),
-    timeout
-  ]);
+function canceledDataLoad() {
+  return new DOMException('Chargement annulé', 'AbortError');
+}
 
-  const queryErrors = [
-    ['accounts', accRes.error],
-    ['positions', posRes.error],
-    ['prelevements', prelRes.error],
-    ['transactions', txRes.error],
-    ['patrimoine_history', histRes.error],
-    ['goals', goalsRes.error],
-  ].filter(([, err]) => Boolean(err));
-
-  if (queryErrors.length > 0) {
-    const firstErr = queryErrors[0][1];
-    if (firstErr?.status === 401) {
-      await sb.auth.signOut();
-      throw new Error('auth_expired');
+async function loadAllData(uid, signal) {
+  if (signal.aborted) throw canceledDataLoad();
+  const controller = new AbortController();
+  let timer;
+  let onAbort;
+  const stopped = new Promise((_, reject) => {
+    onAbort = () => { reject(canceledDataLoad()); controller.abort(); };
+    signal.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => { reject(dataLoadError('timeout')); controller.abort(); }, TIMING_LOAD_TIMEOUT);
+  });
+  const tables = ['accounts', 'positions', 'prelevements', 'transactions', 'patrimoine_history', 'goals'];
+  try {
+    // Seulement des lectures. Le timeout annule les requêtes encore en cours.
+    const results = await Promise.race([
+      Promise.all(tables.map(table => sb.from(table).select('*').eq('user_id', uid)
+        .order(table === 'transactions' ? 'ts' : table === 'patrimoine_history' ? 'date' : 'created_at',
+          { ascending: table !== 'transactions' })
+        .abortSignal(controller.signal))),
+      stopped
+    ]);
+    if (signal.aborted) throw canceledDataLoad();
+    const errors = results.flatMap((response, i) => {
+      if (!response.error && Array.isArray(response.data)) return [];
+      return [{ table: tables[i], status: response.status || response.error?.status || 0,
+        code: response.error?.code || '', message: response.error?.message || 'Réponse inattendue' }];
+    });
+    if (errors.length) {
+      // PostgREST met le statut HTTP sur la réponse, pas sur response.error.
+      const futureJwt = errors.every(e => (e.status === 401 || e.code === 'PGRST303') && /JWT issued at future/i.test(e.message));
+      const temporary = errors.every(e => e.status === 0 || e.status >= 500);
+      const kind = futureJwt ? 'jwt_future' : temporary ? 'network' :
+        errors.every(e => e.status === 401) ? 'auth_required' : 'database';
+      throw dataLoadError(kind, errors);
     }
-    const details = queryErrors
-      .map(([table, err]) => `${table}: ${err.message || 'unknown error'}`)
-      .join(' | ');
-    throw new Error(`load_failed: ${details}`);
+    const [accRes, posRes, prelRes, txRes, histRes, goalsRes] = results;
+    // Aucune affectation globale ici : l'appelant doit encore vérifier que la
+    // session n'a pas changé. Toutes les tables sont validées avant le commit.
+    return {
+      accounts: accRes.data.map(a => ({ id: a.id, name: a.name, type: a.type, solde: a.solde })),
+      positions: posRes.data.map(p => ({
+        id: p.id, symbol: p.symbol, name: p.name, exchange: p.exchange,
+        currency: p.currency, accountId: p.account_id, qty: p.qty,
+        price: p.price, current: p.current, change: p.change,
+        changePercent: p.change_percent, lastUpdated: p.last_updated
+      })),
+      prelevements: prelRes.data.map(p => ({
+        id: p.id, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat, split: p.split || 1
+      })),
+      transactions: txRes.data.map(t => ({
+        id: t.id, type: t.type, symbol: t.symbol, name: t.name,
+        qty: t.qty, price: t.price, accountName: t.account_name, ts: t.ts,
+        ...(t.old_qty !== undefined && t.old_qty !== null ? { oldQty: t.old_qty } : {}),
+        ...(t.old_price !== undefined && t.old_price !== null ? { oldPrice: t.old_price } : {}),
+      })),
+      patrimoineHistory: histRes.data.map(h => ({ date: h.date, value: h.value })),
+      goals: goalsRes.data.map(g => ({
+        id: g.id, name: g.name, target: g.target, current: g.current,
+        emoji: g.emoji, createdAt: new Date(g.created_at).getTime()
+      }))
+    };
+  } catch (error) {
+    if (signal.aborted) throw canceledDataLoad();
+    if (!error.kind && /fetch|network|load failed/i.test(error.message || '')) throw dataLoadError('network');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+    controller.abort();
   }
+}
 
-  accounts = (accRes.data || []).map(a => ({
-    id: a.id, name: a.name, type: a.type, solde: a.solde
-  }));
-  positions = (posRes.data || []).map(p => ({
-    id: p.id, symbol: p.symbol, name: p.name, exchange: p.exchange,
-    currency: p.currency, accountId: p.account_id, qty: p.qty,
-    price: p.price, current: p.current, change: p.change,
-    changePercent: p.change_percent, lastUpdated: p.last_updated
-  }));
-  prelevements = (prelRes.data || []).map(p => ({
-    id: p.id, name: p.name, amount: p.amount, freq: p.freq, cat: p.cat,
-    split: p.split || 1
-  }));
-  transactions = (txRes.data || []).map(t => ({
-    id: t.id, type: t.type, symbol: t.symbol, name: t.name,
-    qty: t.qty, price: t.price, accountName: t.account_name, ts: t.ts,
-    ...(t.old_qty   !== undefined && t.old_qty   !== null ? { oldQty:   t.old_qty   } : {}),
-    ...(t.old_price !== undefined && t.old_price !== null ? { oldPrice: t.old_price } : {}),
-  }));
-  patrimoineHistory = (histRes.data || []).map(h => ({ date: h.date, value: h.value }));
-  goals = (goalsRes.data || []).map(g => ({
-    id: g.id, name: g.name, target: g.target,
-    current: g.current, emoji: g.emoji, createdAt: new Date(g.created_at).getTime()
-  }));
-
-  // positionHistory rechargé depuis Yahoo Finance à chaque session
-  positionHistory = {};
+function waitForDataRetry(ms, signal) {
+  if (signal.aborted) return Promise.reject(canceledDataLoad());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { clearTimeout(timer); reject(canceledDataLoad()); };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 // ─── DB SAVE ──────────────────────────────────────────────────────────────────
@@ -3557,69 +3623,121 @@ document.addEventListener('click', e => {
   setTimeout(() => r.remove(), TIMING_TOAST_FADE + 200); // ~500ms ripple
 });
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-async function initApp(user) {
-  currentUser = user;
+function clearLoadedSession() {
+  // État en mémoire uniquement ; aucune suppression en base ou de jeton SDK.
+  closeMobileActions();
+  currentUser = null;
+  _appReadyTask = null;
+  accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = []; goals = [];
+  positionHistory = {};
+  clearInterval(_priceRefreshInterval); _priceRefreshInterval = null;
+  clearInterval(_eurUsdInterval); _eurUsdInterval = null;
+  eurRates = {};
+  document.getElementById('dogWidget')?.classList.add('hidden');
+  document.getElementById('mainApp').classList.add('hidden');
+}
+
+function initApp(user) {
+  if (!user?.id) return Promise.resolve(false);
+  if (_appReadyTask?.userId === user.id) {
+    currentUser = user;
+    updateUserUI(user);
+    return Promise.resolve(true);
+  }
+  if (_appInitTask?.userId === user.id) return _appInitTask.promise;
+  _appInitTask?.controller.abort();
+  clearLoadedSession();
+  const task = { userId: user.id, controller: new AbortController(), promise: null };
+  _appInitTask = task;
+  _failedLoad = null;
   filteredTypes = null;
   _lastRenderedTotal = null;
   _totalAnimationToken++;
   updateUserUI(user);
-  try {
-    await loadAllData();
-    hideOfflineBanner();
-  } catch(e) {
-    console.error('[Moumix] loadAllData error:', e.message);
-    if (e.message === 'timeout') {
-      showOfflineBanner('⏱ Supabase ne répond pas — nouvelle tentative…', 'warn');
-      // Réessaie une fois après 1s supplémentaire
-      try {
-        await new Promise(r => setTimeout(r, TIMING_SUPABASE_RETRY));
-        await loadAllData();
-        hideOfflineBanner();
-      } catch(e2) {
-        showOfflineBanner('❌ Impossible de charger les données. Vérifiez votre connexion.');
-        currentUser = null;
-        showLogin();
-        document.getElementById('auth-error').textContent = 'La base ne répond pas. Vos données sont conservées ; réessayez dans un instant.';
-        return;
+  hideOfflineBanner();
+  setAuthLoadStatus('Connexion établie — chargement des données…');
+  if (document.getElementById('loginScreen').classList.contains('hidden')) {
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+  }
+  syncAuthSubmitButton();
+  task.promise = (async () => {
+    try {
+      let loaded;
+      let networkRetries = 0;
+      // Maximum quatre tentatives au total, même si les erreurs alternent.
+      for (let attempt = 0; attempt <= JWT_RETRY_DELAYS.length; attempt++) {
+        try {
+          loaded = await loadAllData(user.id, task.controller.signal);
+          break;
+        } catch (error) {
+          if (task.controller.signal.aborted || error.name === 'AbortError') throw error;
+          const futureJwt = error.kind === 'jwt_future';
+          const temporary = error.kind === 'timeout' || error.kind === 'network';
+          if (attempt === JWT_RETRY_DELAYS.length || (!futureJwt && (!temporary || networkRetries++ >= 1))) throw error;
+          setAuthLoadStatus(futureJwt ?
+            `Vérification temporaire de la session — nouvelle tentative (${attempt + 2}/4)…` :
+            'Connexion momentanément indisponible — nouvelle tentative…');
+          await waitForDataRetry(futureJwt ? JWT_RETRY_DELAYS[attempt] : TIMING_SUPABASE_RETRY, task.controller.signal);
+        }
       }
-    } else if (e.message === 'auth_expired') {
-      showOfflineBanner('Session expirée — reconnectez-vous.', 'warn');
-      currentUser = null;
+      if (_appInitTask !== task || task.controller.signal.aborted) return false;
+      // Commit unique, seulement une fois les six lectures réussies.
+      ({ accounts, positions, prelevements, transactions, patrimoineHistory, goals } = loaded);
+      positionHistory = {};
+      currentUser = _authUser?.id === user.id ? _authUser : user;
+      _appReadyTask = task;
+      _failedLoad = null;
+      hideOfflineBanner();
+      document.getElementById('auth-error').textContent = '';
+      document.getElementById('loadingOverlay').classList.add('hidden');
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('mainApp').classList.remove('hidden');
+      renderAll();
+      renderPrelevements();
+      renderGoals();
+      fetchEurUsd();
+      _eurUsdInterval = setInterval(() => { if (_appReadyTask === task) fetchEurUsd(); }, 5 * 60 * 1000);
+      setTimeout(() => { if (_appReadyTask === task) showDog(currentUser); }, TIMING_DOG_SHOW);
+      if (positions.length > 0) {
+        refreshAllPrices();
+        for (const sym of new Set(positions.map(p => p.symbol))) {
+          fetchHistory(sym).then(hist => {
+            if (_appReadyTask !== task || !hist || hist.length < 2) return;
+            positions.filter(p => p.symbol === sym).forEach(p => { positionHistory[p.id] = hist; });
+            renderPositions();
+          });
+        }
+      }
+      loadNewsIndices();
+      _priceRefreshInterval = setInterval(() => {
+        if (_appReadyTask === task && positions.length > 0 && document.visibilityState === 'visible') refreshAllPrices();
+      }, 5 * 60 * 1000);
+      return true;
+    } catch (error) {
+      if (_appInitTask !== task || task.controller.signal.aborted || error.name === 'AbortError') return false;
+      // Pas de jeton, mot de passe ou contenu des comptes dans les diagnostics.
+      console.error('[Moumix] loadAllData error:', error.kind || 'unexpected', error.queryErrors?.length ? error.queryErrors : error.message);
+      clearLoadedSession();
+      _failedLoad = { userId: user.id, email: user.email || '', kind: error.kind || 'unexpected' };
+      if (!document.getElementById('auth-email').value) document.getElementById('auth-email').value = user.email || '';
       showLogin();
-      document.getElementById('auth-error').textContent = 'Session expirée — veuillez vous reconnecter.';
-      return;
-    } else {
-      showOfflineBanner('❌ Erreur de connexion à la base de données.');
-      currentUser = null;
-      showLogin();
-      document.getElementById('auth-error').textContent = 'Impossible de charger les données. Aucune donnée n’a été supprimée.';
-      return;
+      const errEl = document.getElementById('auth-error');
+      errEl.style.color = 'var(--loss)';
+      errEl.textContent = error.kind === 'jwt_future' ?
+        'La session est encore refusée temporairement (JWT issued at future). Patientez quelques secondes puis réessayez. Aucune donnée n’a été supprimée.' :
+        error.kind === 'auth_required' ? 'Session refusée ou expirée — veuillez vous reconnecter.' :
+        error.kind === 'timeout' || error.kind === 'network' ?
+        'Le chargement ne répond pas. Vérifiez votre connexion puis réessayez. Vos données sont conservées.' :
+        `Impossible de charger les données (${error.queryErrors?.find(e => e.status !== 401)?.code || error.queryErrors?.[0]?.code || 'chargement'}). Aucune donnée n’a été supprimée.`;
+      return false;
+    } finally {
+      if (_appInitTask === task) {
+        _appInitTask = null;
+        syncAuthSubmitButton();
+      }
     }
-  }
-  document.getElementById('loadingOverlay').classList.add('hidden');
-  document.getElementById('loginScreen').classList.add('hidden');
-  document.getElementById('mainApp').classList.remove('hidden');
-  renderAll();
-  renderPrelevements();
-  renderGoals();
-  fetchEurUsd();
-  clearInterval(_eurUsdInterval);
-  _eurUsdInterval = setInterval(fetchEurUsd, 5 * 60 * 1000);
-  setTimeout(() => showDog(user), TIMING_DOG_SHOW);
-  if (positions.length > 0) {
-    refreshAllPrices();
-    const _symsInit = [...new Set(positions.map(p => p.symbol))];
-    for (const sym of _symsInit) {
-      fetchHistory(sym).then(hist => {
-        if (!hist || hist.length < 2) return;
-        positions.filter(p => p.symbol === sym).forEach(p => { positionHistory[p.id] = hist; });
-        renderPositions();
-      });
-    }
-  }
-  loadNewsIndices();
-  clearInterval(_priceRefreshInterval);
-  _priceRefreshInterval = setInterval(() => { if (positions.length > 0 && document.visibilityState === 'visible') refreshAllPrices(); }, 5 * 60 * 1000);
+  })();
+  return task.promise;
 }
 
 function showLogin() {
@@ -3627,50 +3745,76 @@ function showLogin() {
   document.getElementById('loadingOverlay').classList.add('hidden');
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('mainApp').classList.add('hidden');
+  syncAuthSubmitButton();
 }
 
-// Auth state listener — point d'entrée principal
-// D'abord on vérifie la session existante (cas refresh page)
+// Auth state listener — ne jamais attendre une opération SDK dans ce callback :
+// Supabase peut encore détenir son verrou de session. Le travail est différé.
 document.getElementById('loadingOverlay').classList.remove('hidden');
 
-// onAuthStateChange sert UNIQUEMENT pour login/logout post-init
-// PAS pour le chargement initial — le SDK n'est pas encore prêt à ce moment
-sb.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_IN' && currentUser === null) {
-    // Vient d'un vrai login (pas un refresh)
-    initApp(session.user);
-  } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-    // Mise à jour silencieuse du token — on met à jour currentUser sans re-init
-    currentUser = session.user;
-  } else if (event === 'SIGNED_OUT') {
-    currentUser = null;
-    accounts = []; positions = []; prelevements = []; transactions = []; patrimoineHistory = []; goals = [];
-    clearInterval(_priceRefreshInterval); _priceRefreshInterval = null;
-    clearInterval(_eurUsdInterval); _eurUsdInterval = null;
-    eurRates = {};
-    const dog = document.getElementById('dogWidget');
-    if (dog) dog.classList.add('hidden');
+function handleAuthStateChange(event, session) {
+  const version = ++_authEventVersion;
+  if (event === 'SIGNED_OUT') {
+    _authUser = null;
+    _authSubmitTask = null;
+    _appInitTask?.controller.abort();
+    _appInitTask = null;
+    _failedLoad = null;
+    clearLoadedSession();
+    document.getElementById('auth-error').textContent = '';
     showLogin();
+    return;
   }
-});
+  if (!session?.user) return;
+  _authUser = session.user;
+  if ((_appInitTask && _appInitTask.userId !== session.user.id) ||
+      (_appReadyTask && _appReadyTask.userId !== session.user.id)) {
+    _appInitTask?.controller.abort();
+    _appInitTask = null;
+    _failedLoad = null;
+    clearLoadedSession();
+  }
+  if (_appReadyTask?.userId === session.user.id) {
+    currentUser = session.user;
+    updateUserUI(session.user);
+    return;
+  }
+  // Un SIGNED_IN peut être émis au simple retour sur l'onglet : après épuisement
+  // des essais, attendre un vrai renouvellement ou le bouton Réessayer.
+  if (_failedLoad?.userId === session.user.id && event !== 'TOKEN_REFRESHED') return;
+  if (!['INITIAL_SESSION', 'SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) return;
+  setTimeout(() => {
+    if (_authEventVersion !== version || _authSubmitTask || document.readyState === 'loading') return;
+    initApp(session.user);
+  }, 0);
+}
+sb.auth.onAuthStateChange(handleAuthStateChange);
 
-// Pour le chargement initial et les refreshs :
-// On attend que le SDK ait fini son init complète avant d'appeler getSession
+// getSession attend lui-même l'initialisation du SDK ; aucun délai arbitraire.
 window.addEventListener('load', async () => {
-  // Laisse le SDK terminer _initialize / _recoverAndRefresh
-  await new Promise(r => setTimeout(r, TIMING_SDK_INIT));
   simUpdate(); // initialise le simulateur dès le chargement
   _simApplyDefaultView();
+  const version = _authEventVersion;
   try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session?.user) {
-      await initApp(session.user);
-    } else {
-      // session inexistant OU session sans user (token expiré, user supprimé…)
+    const { data, error } = await sb.auth.getSession();
+    if (error) throw error;
+    // Une réponse tardive ne doit pas annuler une déconnexion ou une connexion
+    // à un autre compte survenue entre-temps.
+    const user = version === _authEventVersion ? data.session?.user : _authUser;
+    if (_authSubmitTask) return;
+    if (user) {
+      _authUser = user;
+      if (_failedLoad?.userId !== user.id) await initApp(user);
+    } else if (!_appInitTask && !_appReadyTask) {
       showLogin();
     }
   } catch(e) {
-    showLogin();
+    if (!_appInitTask && !_appReadyTask && !_authSubmitTask) {
+      showLogin();
+      const errEl = document.getElementById('auth-error');
+      errEl.style.color = 'var(--loss)';
+      errEl.textContent = 'Session indisponible — veuillez vous reconnecter.';
+    }
   }
 });
 // ─── RESIZE & RESPONSIVE ─────────────────────────────────────────────────────
@@ -4568,6 +4712,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 
 // ─── App namespace (optional) ───────────────────────────────────────────────
 window.App = window.App || {};
+window.App.authRecoveryVersion = '2026-08-28.1';
 for (const k of ['openMobileActions', 'closeMobileActions', 'runMobileAction']) {
   window.App[k] = window[k];
 }
